@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   if (!(await requireAdmin(request))) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบผู้ดูแล" }, { status: 401 });
 
   const body = (await request.json()) as { academicYear?: number; fileName?: string; confirm?: boolean; rows?: ImportRow[] };
-  const academicYear = Number(body.academicYear ?? 2568);
+  const academicYear = Number(body.academicYear ?? 2569);
   const rows = Array.isArray(body.rows) ? body.rows : [];
   if (!Number.isInteger(academicYear) || academicYear < 2500 || academicYear > 2700) return NextResponse.json({ error: "ปีการศึกษาไม่ถูกต้อง" }, { status: 400 });
   if (!rows.length || rows.length > 500) return NextResponse.json({ error: "จำนวนรายการนำเข้าต้องอยู่ระหว่าง 1–500 คน" }, { status: 400 });

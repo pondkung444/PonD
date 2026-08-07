@@ -7,12 +7,12 @@ export async function GET(request: Request) {
   }
   const { baseUrl, headers } = supabaseConfig();
   const cycleResponse = await fetch(
-    `${baseUrl}/rest/v1/evaluation_cycles?select=id,academic_year&academic_year=eq.2568&limit=1`,
+    `${baseUrl}/rest/v1/evaluation_cycles?select=id,academic_year&academic_year=eq.2569&limit=1`,
     { headers, cache: "no-store" },
   );
   if (!cycleResponse.ok) return databaseError(cycleResponse);
   const [cycle] = (await cycleResponse.json()) as { id: string; academic_year: number }[];
-  if (!cycle) return NextResponse.json({ error: "ไม่พบรอบประเมินปี 2568" }, { status: 404 });
+  if (!cycle) return NextResponse.json({ error: "ไม่พบรอบประเมินปี 2569" }, { status: 404 });
 
   const query = "select=id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,employee:employees(id,employee_code,full_name,email,position,national_id,bank_account,personnel_group,source_sheet,active)&cycle_id=eq.";
   const response = await fetch(`${baseUrl}/rest/v1/evaluations?${query}${cycle.id}&order=created_at.asc`, {
