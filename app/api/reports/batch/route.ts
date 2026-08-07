@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       zip.file(`${order}_หนังสือแจ้งผลประเมิน_${safeFileName(row.employee.full_name)}_ลับ.pdf`, pdf);
     }
     const archive = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
-    const academicYear = orderedRows[0]?.cycle.academic_year ?? 2569;
+    const academicYear = orderedRows[0]?.cycle.academic_year ?? 2568;
     const fileName = `หนังสือแจ้งผลประเมิน_บุคลากรทั้งหมด_${academicYear}_ลับ.zip`;
     return new Response(Uint8Array.from(archive), {
       headers: {

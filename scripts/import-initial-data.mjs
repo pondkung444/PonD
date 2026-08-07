@@ -72,7 +72,7 @@ const savedEmployees = await employeeResponse.json();
 
 const cycleResponse = await fetch(`${baseUrl}/rest/v1/evaluation_cycles?on_conflict=academic_year`, {
   method: "POST", headers,
-  body: JSON.stringify([{ academic_year: 2569, title: "ผลการประเมินและการปรับขึ้นเงินเดือน ปีการศึกษา 2569", period_start: "2026-05-01", period_end: "2027-04-30", status: "draft" }]),
+  body: JSON.stringify([{ academic_year: 2568, title: "ผลการประเมินและการปรับขึ้นเงินเดือน ปีการศึกษา 2568", period_start: "2025-05-01", period_end: "2026-04-30", status: "draft" }]),
 });
 if (!cycleResponse.ok) throw new Error(`Cycle import failed (${cycleResponse.status}): ${await cycleResponse.text()}`);
 const [cycle] = await cycleResponse.json();
@@ -80,4 +80,4 @@ const byCode = new Map(savedEmployees.map((employee) => [employee.employee_code,
 const evaluations = valid.map((person) => ({ cycle_id: cycle.id, employee_id: byCode.get(person.employee_code), evaluation_score: person.evaluation_score, old_salary: person.old_salary, raise_percent: person.raise_percent, status: "draft" }));
 const evaluationResponse = await fetch(`${baseUrl}/rest/v1/evaluations?on_conflict=cycle_id,employee_id`, { method: "POST", headers, body: JSON.stringify(evaluations) });
 if (!evaluationResponse.ok) throw new Error(`Evaluation import failed (${evaluationResponse.status}): ${await evaluationResponse.text()}`);
-console.log(JSON.stringify({ importedEmployees: savedEmployees.length, importedEvaluations: (await evaluationResponse.json()).length, academicYear: 2569 }));
+console.log(JSON.stringify({ importedEmployees: savedEmployees.length, importedEvaluations: (await evaluationResponse.json()).length, academicYear: 2568 }));
