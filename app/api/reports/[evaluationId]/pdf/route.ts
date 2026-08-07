@@ -3,6 +3,10 @@ import { createPersonnelReportPdf } from "@/lib/report-pdf";
 import { requireAdmin, supabaseConfig } from "@/lib/supabase-server";
 
 type EvaluationRow = {
+  snapshot_full_name: string;
+  snapshot_position: string;
+  snapshot_national_id: string;
+  snapshot_bank_account: string;
   evaluation_score: number | string | null;
   old_salary: number | string;
   raise_percent: number | string;
@@ -42,6 +46,10 @@ export async function GET(
     "comment_3",
     "comment_4",
     "comment_5",
+    "snapshot_full_name",
+    "snapshot_position",
+    "snapshot_national_id",
+    "snapshot_bank_account",
     "cycle:evaluation_cycles(academic_year)",
     "employee:employees(full_name,position,national_id,bank_account,active)",
   ].join(",");
@@ -54,23 +62,23 @@ export async function GET(
     return NextResponse.json({ error: "อ่านข้อมูลรายงานไม่สำเร็จ" }, { status: 500 });
   }
   const [row] = (await response.json()) as EvaluationRow[];
-  if (!row || row.employee?.active === false) {
+  if (!row) {
     return NextResponse.json({ error: "ไม่พบข้อมูลรายงานของบุคลากร" }, { status: 404 });
   }
 
   try {
     const pdf = await createPersonnelReportPdf({
       academicYear: row.cycle.academic_year,
-      fullName: row.employee.full_name,
-      position: row.employee.position,
-      nationalId: row.employee.national_id,
-      bankAccount: row.employee.bank_account,
+      fullName: row.snapshot_full_name || row.employee.full_name,
+      position: row.snapshot_position || row.employee.position,
+      nationalId: row.snapshot_national_id || row.employee.national_id,
+      bankAccount: row.snapshot_bank_account || row.employee.bank_account,
       evaluationScore: row.evaluation_score === null ? null : Number(row.evaluation_score),
       oldSalary: Number(row.old_salary),
       raisePercent: Number(row.raise_percent),
       comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
     });
-    const safeName = row.employee.full_name.replace(/[\\/:*?"<>|]/g, "_").trim() || "บุคลากร";
+    const safeName = (row.snapshot_full_name || row.employee.full_name).replace(/[\\/:*?"<>|]/g, "_").trim() || "บุคลากร";
     const fileName = `หนังสือแจ้งผลประเมิน_${safeName}_ลับ.pdf`;
     return new Response(Buffer.from(pdf), {
       headers: {

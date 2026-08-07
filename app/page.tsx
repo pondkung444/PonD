@@ -12,7 +12,8 @@ type Person = {
 
 type Comparison = { total:number; existing:number; newPeople:string[]; departing:string[]; changed:string[]; missing:string[] };
 type ImportPreview = { fileName: string; rows: Person[]; sheetCount: number; groupCounts: Record<string,number>; issues: string[]; comparison?:Comparison };
-type ApiEvaluationRow = { id:string; evaluation_score:number|string|null; old_salary:number|string; raise_percent:number|string; comment_1:string; comment_2:string; comment_3:string; comment_4:string; comment_5:string; employee:{ id:string; employee_code:string|null; full_name:string; email:string; position:string; national_id:string; bank_account:string; active:boolean; source_sheet:string|null } };
+type Cycle = { id:string; academic_year:number; title:string; period_start:string|null; period_end:string|null; status:"draft"|"ready"|"sent"|"closed"; closed_at:string|null };
+type ApiEvaluationRow = { id:string; evaluation_score:number|string|null; old_salary:number|string; raise_percent:number|string; comment_1:string; comment_2:string; comment_3:string; comment_4:string; comment_5:string; snapshot_full_name:string|null; snapshot_email:string|null; snapshot_position:string|null; snapshot_national_id:string|null; snapshot_bank_account:string|null; snapshot_source_sheet:string|null; employee:{ id:string; employee_code:string|null; full_name:string; email:string; position:string; national_id:string; bank_account:string; active:boolean; source_sheet:string|null } };
 type EmailHistoryRow = { id:string; evaluation_id:string; status:"queued"|"sending"|"sent"|"failed"; sent_at:string|null; created_at:string; recipient_email:string; error_message:string|null };
 
 const sample: Person[] = [
@@ -94,6 +95,10 @@ export default function Home() {
   const [emailProgress,setEmailProgress] = useState({done:0,total:0,sent:0,failed:0});
   const [pendingImport,setPendingImport] = useState<ImportPreview|null>(null);
   const [importing,setImporting] = useState(false);
+  const [cycles,setCycles] = useState<Cycle[]>([]);
+  const [academicYear,setAcademicYear] = useState(2568);
+  const [cycleStatus,setCycleStatus] = useState<Cycle["status"]>("draft");
+  const [creatingCycle,setCreatingCycle] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const current=people[selected] ?? sample[0];
   const errors=useMemo(()=>people.map((p,i)=>({i,items:[!p.name&&"ไม่มีชื่อ",!p.email&&"ไม่มีอีเมล",p.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)&&"อีเมลไม่ถูกต้อง",!p.nationalId&&"ไม่มีเลขบัตรประชาชน",!p.bankAccount&&"ไม่มีเลขบัญชีธนาคาร",p.oldSalary<=0&&"ไม่มีเงินเดือนเดิม",p.score===null&&"ยังไม่มีผลประเมิน"].filter(Boolean) as string[]})).filter(x=>x.items.length),[people]);
@@ -109,27 +114,37 @@ export default function Home() {
       }
       const saved=window.localStorage.getItem("psu_admin_token");
       if(!saved){setAuthReady(true);return;}
-      setToken(saved);await loadPeople(saved);setAuthReady(true);
+      setToken(saved);await loadCycles(saved);setAuthReady(true);
     }
     void initialize();
     // Initial authentication bootstrap intentionally runs once on page load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
-  async function loadPeople(accessToken:string){
-    const response=await fetch("/api/evaluations",{headers:{Authorization:`Bearer ${accessToken}`}});
+  async function loadCycles(accessToken:string,preferredYear?:number){
+    const response=await fetch("/api/cycles",{headers:{Authorization:`Bearer ${accessToken}`},cache:"no-store"});
+    if(response.status===401){window.localStorage.removeItem("psu_admin_token");setToken(null);return;}
+    const data=await response.json();
+    if(!response.ok){setMessage(data.error??"โหลดรอบประเมินไม่สำเร็จ");return;}
+    const rows=(data.rows??[]) as Cycle[];setCycles(rows);
+    const target=rows.find(row=>row.academic_year===preferredYear)??rows[0];
+    if(target){setAcademicYear(target.academic_year);setCycleStatus(target.status);await loadPeople(accessToken,target.academic_year);}
+  }
+
+  async function loadPeople(accessToken:string,year=academicYear){
+    const response=await fetch(`/api/evaluations?year=${year}`,{headers:{Authorization:`Bearer ${accessToken}`}});
     if(response.status===401){window.localStorage.removeItem("psu_admin_token");setToken(null);setAuthError("กรุณาเข้าสู่ระบบอีกครั้ง");return;}
     const data=await response.json();
     if(!response.ok){setMessage(data.error??"โหลดข้อมูลไม่สำเร็จ");return;}
     const loaded:Person[]=data.rows.map((row:ApiEvaluationRow)=>({
       id:row.employee.employee_code||row.employee.id, employeeId:row.employee.id, evaluationId:row.id,
-      status:row.employee.active===false?"พ้นสภาพ":"ปฏิบัติงาน", name:row.employee.full_name, email:row.employee.email, position:row.employee.position,
-      nationalId:row.employee.national_id||"", bankAccount:row.employee.bank_account||"",
+      status:row.employee.active===false?"พ้นสภาพ":"ปฏิบัติงาน", name:row.snapshot_full_name||row.employee.full_name, email:row.snapshot_email||row.employee.email, position:row.snapshot_position||row.employee.position,
+      nationalId:row.snapshot_national_id||row.employee.national_id||"", bankAccount:row.snapshot_bank_account||row.employee.bank_account||"",
       score:row.evaluation_score===null?null:Number(row.evaluation_score), raisePercent:Number(row.raise_percent),
       oldSalary:Number(row.old_salary), comments:[row.comment_1,row.comment_2,row.comment_3,row.comment_4,row.comment_5],
-      source:row.employee.source_sheet||"Supabase",
+      source:row.snapshot_source_sheet||row.employee.source_sheet||"Supabase",
     }));
-    setPeople(loaded);setSelected(0);setMessage(`โหลดข้อมูลจริงแล้ว ${loaded.length} คน`);void loadEmailHistory(accessToken);
+    setAcademicYear(data.academicYear);setCycleStatus(data.cycleStatus);setPeople(loaded);setSelected(0);setMessage(`โหลดข้อมูลปี ${data.academicYear} แล้ว ${loaded.length} คน`);void loadEmailHistory(accessToken);
   }
 
   async function loadEmailHistory(accessToken:string){
@@ -148,7 +163,7 @@ export default function Home() {
     const response=await fetch(`${base}/auth/v1/token?grant_type=password`,{method:"POST",headers:{apikey:key,"Content-Type":"application/json"},body:JSON.stringify({email:loginEmail,password:loginPassword})});
     const data=await response.json();
     if(!response.ok){setAuthError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");return;}
-    window.localStorage.setItem("psu_admin_token",data.access_token);setToken(data.access_token);setAuthReady(true);await loadPeople(data.access_token);
+    window.localStorage.setItem("psu_admin_token",data.access_token);setToken(data.access_token);setAuthReady(true);await loadCycles(data.access_token);
   }
 
   async function requestRecovery(){
@@ -166,10 +181,11 @@ export default function Home() {
     if(!base||!key||!recoveryToken)return;
     const response=await fetch(`${base}/auth/v1/user`,{method:"PUT",headers:{apikey:key,Authorization:`Bearer ${recoveryToken}`,"Content-Type":"application/json"},body:JSON.stringify({password:newPassword})});
     if(!response.ok){setAuthError("ตั้งรหัสผ่านไม่สำเร็จ ลิงก์อาจหมดอายุ");return;}
-    window.localStorage.setItem("psu_admin_token",recoveryToken);setToken(recoveryToken);setRecoveryToken(null);await loadPeople(recoveryToken);
+    window.localStorage.setItem("psu_admin_token",recoveryToken);setToken(recoveryToken);setRecoveryToken(null);await loadCycles(recoveryToken);
   }
 
   async function saveCurrent(){
+    if(cycleStatus==="closed"){setMessage("รอบประเมินนี้ปิดแล้ว จึงแก้ไขข้อมูลไม่ได้");return;}
     if(!token||!current.employeeId||!current.evaluationId){setMessage("รายการนี้ยังไม่ได้เชื่อมกับฐานข้อมูล");return;}
     setSaving(true);setMessage("");
     const response=await fetch("/api/evaluations",{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({...current})});
@@ -205,7 +221,7 @@ export default function Home() {
       const response=await fetch("/api/reports/batch",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({evaluationIds})});
       if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error??"สร้างชุด PDF ไม่สำเร็จ");}
       const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");
-      link.href=url;link.download="หนังสือแจ้งผลประเมิน_บุคลากรทั้งหมด_2568_ลับ.zip";document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1_000);
+      link.href=url;link.download=`หนังสือแจ้งผลประเมิน_บุคลากรทั้งหมด_${academicYear}_ลับ.zip`;document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1_000);
       setMessage(`สร้าง PDF ครบ ${evaluationIds.length} คนแล้ว`);
     }catch(error){setMessage(error instanceof Error?error.message:"สร้างชุด PDF ไม่สำเร็จ");}
     finally{setBatchPdfLoading(false);}
@@ -267,7 +283,7 @@ export default function Home() {
       const groupCounts=imported.reduce<Record<string,number>>((result,person)=>{result[person.source]=(result[person.source]??0)+1;return result;},{});
       if(issues.length){setPendingImport({fileName:file.name,rows:imported,sheetCount:Object.keys(groupCounts).length,groupCounts,issues});setMessage(`พบข้อมูลที่ต้องแก้ ${issues.length} จุด`);return;}
       if(!token)throw new Error("กรุณาเข้าสู่ระบบอีกครั้ง");
-      const previewResponse=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear:2568,fileName:file.name,confirm:false,rows:serializeImportRows(imported)})});
+      const previewResponse=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear,fileName:file.name,confirm:false,rows:serializeImportRows(imported)})});
       const previewData=await previewResponse.json();
       if(!previewResponse.ok)throw new Error(previewData.issues?.slice(0,5).map((issue:{name?:string;message:string})=>`${issue.name||"รายการ"}: ${issue.message}`).join(" · ")||previewData.error||"ตรวจไฟล์ไม่สำเร็จ");
       setPendingImport({fileName:file.name,rows:imported,sheetCount:Object.keys(groupCounts).length,groupCounts,issues:[],comparison:previewData.preview});
@@ -278,10 +294,21 @@ export default function Home() {
   async function confirmImport(){
     if(!token||!pendingImport||pendingImport.issues.length)return;
     setImporting(true);setMessage("");
-    const response=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear:2568,fileName:pendingImport.fileName,confirm:true,rows:serializeImportRows(pendingImport.rows)})});
+    const response=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear,fileName:pendingImport.fileName,confirm:true,rows:serializeImportRows(pendingImport.rows)})});
     const data=await response.json();setImporting(false);
     if(!response.ok){setMessage(data.issues?.slice(0,5).map((issue:{row:number;name?:string;message:string})=>`${issue.name||`รายการ ${issue.row}`}: ${issue.message}`).join(" · ")||data.error||"นำเข้าไม่สำเร็จ");return;}
-    setPendingImport(null);await loadPeople(token);setStep("review");setMessage(`บันทึกข้อมูลแล้ว ${data.importedEmployees} คน`);
+    setPendingImport(null);await loadPeople(token,academicYear);setStep("review");setMessage(`บันทึกข้อมูลแล้ว ${data.importedEmployees} คน`);
+  }
+
+  async function createNextCycle(){
+    if(!token||creatingCycle)return;
+    const nextYear=Math.max(...cycles.map(cycle=>cycle.academic_year),academicYear)+1;
+    if(!window.confirm(`สร้างรอบปีการศึกษา ${nextYear} จากข้อมูลปี ${academicYear}\n\nระบบจะยกเงินเดือนใหม่มาเป็นเงินเดือนเดิม และล้างคะแนนกับข้อเสนอแนะ`))return;
+    setCreatingCycle(true);setMessage("");
+    const response=await fetch("/api/cycles",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear:nextYear,sourceYear:academicYear})});
+    const data=await response.json();setCreatingCycle(false);
+    if(!response.ok){setMessage(data.error??"สร้างรอบใหม่ไม่สำเร็จ");return;}
+    await loadCycles(token,nextYear);setStep("import");setMessage(`สร้างรอบปี ${nextYear} แล้ว ยกข้อมูลมา ${data.copied} คน กรุณานำเข้า Excel ใหม่เพื่อตรวจสอบ`);
   }
 
   function update(patch:Partial<Person>){setPeople(list=>list.map((p,i)=>i===selected?{...p,...patch}:p));}
@@ -293,15 +320,15 @@ export default function Home() {
   if(!token)return <main className="login-page"><form className="login-card" onSubmit={login}><div className="logo">ป</div><h1>เข้าสู่ระบบผู้ดูแล</h1><p>ระบบแจ้งผลประเมินบุคลากร</p><label>อีเมล<input type="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} required/></label><label>รหัสผ่าน<input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} required/></label>{authError&&<div className="alert">{authError}</div>}{resetMessage&&<div className="message compact">{resetMessage}</div>}<button className="primary" type="submit">เข้าสู่ระบบ</button><button className="link-button" type="button" onClick={requestRecovery}>ลืมรหัสผ่าน</button></form></main>;
 
   return <div className="app-shell">
-    <header className="topbar"><div className="identity"><div className="logo">ป</div><div><strong>ระบบแจ้งผลประเมินบุคลากร</strong><span>โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</span></div></div><div className="cycle">ปีการศึกษา 2568</div></header>
+    <header className="topbar"><div className="identity"><div className="logo">ป</div><div><strong>ระบบแจ้งผลประเมินบุคลากร</strong><span>โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</span></div></div><div className="cycle cycle-controls"><select aria-label="เลือกรอบประเมิน" value={academicYear} onChange={e=>token&&loadCycles(token,Number(e.target.value))}>{cycles.map(cycle=><option key={cycle.id} value={cycle.academic_year}>ปีการศึกษา {cycle.academic_year}{cycle.status==="closed"?" · ประวัติ":""}</option>)}</select><button onClick={createNextCycle} disabled={creatingCycle}>{creatingCycle?"กำลังสร้าง...":"+ สร้างรอบใหม่"}</button></div></header>
     <nav className="steps" aria-label="ขั้นตอนทำงาน">
       <button className={step==="import"?"active":""} onClick={()=>setStep("import")}><b>1</b><span>นำเข้า Excel</span></button>
       <button className={step==="review"?"active":""} onClick={()=>setStep("review")}><b>2</b><span>ตรวจและแก้ไข</span></button>
       <button className={step==="report"?"active":""} onClick={()=>setStep("report")}><b>3</b><span>ดูรายงานและส่ง</span></button>
     </nav>
     <main>
-      {step==="import"&&<section className="page narrow"><div className="page-title"><div><h1>นำเข้าข้อมูลจาก Excel</h1><p>ใช้ไฟล์รายการปรับเงินเดือนเดิม ระบบจะรวมรายชื่อจากทุกกลุ่มให้โดยอัตโนมัติ</p></div></div>
-        <div className="upload-card" onClick={()=>inputRef.current?.click()} onKeyDown={e=>e.key==="Enter"&&inputRef.current?.click()} role="button" tabIndex={0}>
+      {step==="import"&&<section className="page narrow"><div className="page-title"><div><h1>นำเข้าข้อมูลจาก Excel · ปี {academicYear}</h1><p>{cycleStatus==="closed"?"รอบนี้เป็นประวัติและถูกล็อกแล้ว เลือกรอบใหม่เพื่อทำข้อมูล":"ระบบจะเปรียบเทียบคนเดิม คนเข้าใหม่ คนพ้นสภาพ และข้อมูลที่เปลี่ยนก่อนบันทึก"}</p></div></div>
+        <div className={`upload-card ${cycleStatus==="closed"?"disabled":""}`} onClick={()=>cycleStatus!=="closed"&&inputRef.current?.click()} onKeyDown={e=>e.key==="Enter"&&cycleStatus!=="closed"&&inputRef.current?.click()} role="button" tabIndex={0}>
           <div className="upload-icon">↑</div><h2>เลือกไฟล์ Excel</h2><p>รองรับ .xlsx และ .xls ข้อมูลต้นฉบับจะไม่ถูกแก้ไข</p><button className="primary">เลือกไฟล์จากเครื่อง</button>
           <input ref={inputRef} type="file" accept=".xlsx,.xls" hidden onChange={e=>e.target.files?.[0]&&importExcel(e.target.files[0])}/>
         </div>
@@ -318,11 +345,11 @@ export default function Home() {
             <div className="form-grid"><label>ชื่อ–สกุล<input value={current.name} onChange={e=>update({name:e.target.value})}/></label><label>ตำแหน่ง<input value={current.position} onChange={e=>update({position:e.target.value})}/></label><label>อีเมลผู้รับ<input type="email" value={current.email} onChange={e=>update({email:e.target.value})}/></label><label>เลขบัตรประชาชน/ผู้เสียภาษี<input value={current.nationalId} onChange={e=>update({nationalId:e.target.value})}/></label><label>เลขบัญชีธนาคาร<input value={current.bankAccount} onChange={e=>update({bankAccount:e.target.value})}/></label><label>ผลประเมิน (%)<input type="number" min="0" max="100" step="0.01" value={current.score??""} onChange={e=>update({score:e.target.value===""?null:Number(e.target.value)})}/></label><label>เงินเดือนเดิม (บาท)<input type="number" min="0" value={current.oldSalary||""} onChange={e=>update({oldSalary:Number(e.target.value)})}/></label><label>ร้อยละที่ปรับขึ้น<input type="number" min="0" step="0.01" value={current.raisePercent||""} onChange={e=>update({raisePercent:Number(e.target.value)})}/></label></div>
             <div className="calculation"><div><span>เงินเดือนเดิม</span><strong>{current.oldSalary.toLocaleString()} บาท</strong></div><div><span>จำนวนเงินที่เพิ่ม</span><strong>{increase.toLocaleString()} บาท</strong></div><div><span>เงินเดือนใหม่</span><strong>{(current.oldSalary+increase).toLocaleString()} บาท</strong></div></div>
             <div className="comments"><div><h3>ข้อเสนอแนะของงานบุคลากร</h3><p>ไม่บังคับกรอก เพิ่มได้สูงสุด 5 ข้อ</p></div>{Array.from({length:5}).map((_,i)=><label key={i}><span>{i+1}.</span><textarea rows={2} placeholder="ข้อเสนอแนะ (ถ้ามี)" value={current.comments[i]??""} onChange={e=>updateComment(i,e.target.value)}/></label>)}</div>
-            <div className="editor-actions"><button className="secondary" disabled={selected===0} onClick={()=>setSelected(Math.max(0,selected-1))}>คนก่อนหน้า</button><div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}><button className="secondary" disabled={Boolean(errors.find(x=>x.i===selected))||pdfLoading!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF รายคน"}</button><button className="primary" disabled={saving} onClick={async()=>{await saveCurrent();if(selected<people.length-1)setSelected(selected+1)}}>{saving?"กำลังบันทึก...":"บันทึกและไปคนถัดไป"}</button></div></div>
+            <div className="editor-actions"><button className="secondary" disabled={selected===0} onClick={()=>setSelected(Math.max(0,selected-1))}>คนก่อนหน้า</button><div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}><button className="secondary" disabled={Boolean(errors.find(x=>x.i===selected))||pdfLoading!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF รายคน"}</button><button className="primary" disabled={saving||cycleStatus==="closed"} onClick={async()=>{await saveCurrent();if(selected<people.length-1)setSelected(selected+1)}}>{cycleStatus==="closed"?"รอบนี้ปิดแล้ว":saving?"กำลังบันทึก...":"บันทึกและไปคนถัดไป"}</button></div></div>
           </div></div>
       </section>}
       {step==="report"&&<section className="page"><div className="page-title"><div><h1>ตรวจรายงานก่อนส่ง</h1><p>ข้อมูลด้านล่างคือข้อมูลที่จะปรากฏใน PDF ของบุคลากร</p></div><div className="report-actions"><button className="secondary" disabled={Boolean(errors.find(x=>x.i===selected))||sendingEmails!==null||!emailConfigured||!emailHistoryReady||!emailTestRecipient} onClick={()=>sendEmails("test")}>{sendingEmails==="test"?"กำลังส่งทดสอบ...":"ส่งอีเมลทดสอบ"}</button><button className="secondary" onClick={()=>setStep("review")}>กลับไปแก้ข้อมูล</button></div></div>
-        {errors.length>0?<div className="blocking"><strong>ยังสร้างรายงานทั้งหมดไม่ได้</strong><p>มีข้อมูลที่ต้องตรวจอีก {errors.length} คน กรุณากลับไปแก้ให้ครบ</p><button className="primary" onClick={()=>{setSelected(errors[0].i);setStep("review")}}>ไปยังรายการแรกที่ต้องแก้</button></div>:<div className="report-layout"><aside className="report-nav">{people.map((p,i)=><button key={p.id} onClick={()=>setSelected(i)} className={i===selected?"selected":""}>{p.name}</button>)}</aside><div><article className="paper"><div className="school">โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</div><h2>หนังสือแจ้งผลการประเมินผลการปฏิบัติงาน<br/>และการปรับขึ้นเงินเดือน ปีการศึกษา 2568</h2><dl><dt>ชื่อ–สกุล</dt><dd>{current.name}</dd><dt>ตำแหน่ง</dt><dd>{current.position}</dd><dt>ผลประเมิน</dt><dd>{current.score?.toFixed(2)}%</dd></dl><div className="salary-table"><div>เงินเดือนเดิม</div><div>ร้อยละที่เพิ่ม</div><div>จำนวนเงินที่เพิ่ม</div><div>เงินเดือนใหม่</div><strong>{current.oldSalary.toLocaleString()}</strong><strong>{current.raisePercent.toFixed(2)}%</strong><strong>{increase.toLocaleString()}</strong><strong>{(current.oldSalary+increase).toLocaleString()}</strong></div>{current.comments.some(c=>c.trim())&&<><h3>ข้อเสนอแนะ</h3><ol>{current.comments.filter(c=>c.trim()).map((c,i)=><li key={i}>{c}</li>)}</ol></>}</article><div className="send-panel"><div><strong>PDF ของ {current.name}</strong><p>ไฟล์จริงมีเลขบัตรประชาชน บัญชีธนาคาร และคำว่า “ลับ”</p></div><div className="report-actions"><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("download")}>{pdfLoading==="download"?"กำลังดาวน์โหลด...":"ดาวน์โหลดรายคน"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={downloadAllPdfs}>{batchPdfLoading?"กำลังสร้างทุกคน...":`ดาวน์โหลดทุกคน (${people.length})`}</button></div></div><div className="send-panel email-send-panel"><div><strong>ส่งอีเมลเอกสารลับ</strong><p>{current.name} · {current.email}</p>{currentEmailHistory?.status==="sent"&&<p className="sent-status">ส่งล่าสุด {new Date(currentEmailHistory.sent_at||currentEmailHistory.created_at).toLocaleString("th-TH")}</p>}{currentEmailHistory?.status==="failed"&&<p className="failed-status">ครั้งล่าสุดส่งไม่สำเร็จ — กดส่งรายคนเพื่อลองอีกครั้ง</p>}{!emailConfigured&&<p className="failed-status">ยังไม่ได้ตั้งค่า Google Workspace บน Vercel</p>}{emailConfigured&&!emailHistoryReady&&<p className="failed-status">ยังไม่ได้สร้างตารางประวัติอีเมลใน Supabase</p>}</div><div className="report-actions"><button className="secondary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("single")}>{sendingEmails==="single"?"กำลังส่ง...":currentEmailHistory?.status==="sent"?"ส่งอีเมลรายคนอีกครั้ง":"ส่งอีเมลรายคน"}</button><button className="primary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("all")}>{sendingEmails==="all"?`กำลังส่ง ${emailProgress.done}/${emailProgress.total}`:`ยืนยันและส่งทั้งหมด (${people.length})`}</button></div></div>{sendingEmails&&<div className="email-progress"><strong>กำลังส่งอีเมล กรุณาอย่าปิดหน้านี้</strong><p>ดำเนินการแล้ว {emailProgress.done} จาก {emailProgress.total} · สำเร็จ {emailProgress.sent} · ไม่สำเร็จ {emailProgress.failed}</p><progress max={emailProgress.total||1} value={emailProgress.done}/></div>}{message&&<div className="message compact">{message}</div>}</div></div>}
+        {errors.length>0?<div className="blocking"><strong>ยังสร้างรายงานทั้งหมดไม่ได้</strong><p>มีข้อมูลที่ต้องตรวจอีก {errors.length} คน กรุณากลับไปแก้ให้ครบ</p><button className="primary" onClick={()=>{setSelected(errors[0].i);setStep("review")}}>ไปยังรายการแรกที่ต้องแก้</button></div>:<div className="report-layout"><aside className="report-nav">{people.map((p,i)=><button key={p.id} onClick={()=>setSelected(i)} className={i===selected?"selected":""}>{p.name}</button>)}</aside><div><article className="paper"><div className="school">โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</div><h2>หนังสือแจ้งผลการประเมินผลการปฏิบัติงาน<br/>และการปรับขึ้นเงินเดือน ปีการศึกษา {academicYear}</h2><dl><dt>ชื่อ–สกุล</dt><dd>{current.name}</dd><dt>ตำแหน่ง</dt><dd>{current.position}</dd><dt>ผลประเมิน</dt><dd>{current.score?.toFixed(2)}%</dd></dl><div className="salary-table"><div>เงินเดือนเดิม</div><div>ร้อยละที่เพิ่ม</div><div>จำนวนเงินที่เพิ่ม</div><div>เงินเดือนใหม่</div><strong>{current.oldSalary.toLocaleString()}</strong><strong>{current.raisePercent.toFixed(2)}%</strong><strong>{increase.toLocaleString()}</strong><strong>{(current.oldSalary+increase).toLocaleString()}</strong></div>{current.comments.some(c=>c.trim())&&<><h3>ข้อเสนอแนะ</h3><ol>{current.comments.filter(c=>c.trim()).map((c,i)=><li key={i}>{c}</li>)}</ol></>}</article><div className="send-panel"><div><strong>PDF ของ {current.name}</strong><p>ไฟล์จริงมีเลขบัตรประชาชน บัญชีธนาคาร และคำว่า “ลับ”</p></div><div className="report-actions"><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("download")}>{pdfLoading==="download"?"กำลังดาวน์โหลด...":"ดาวน์โหลดรายคน"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={downloadAllPdfs}>{batchPdfLoading?"กำลังสร้างทุกคน...":`ดาวน์โหลดทุกคน (${people.length})`}</button></div></div><div className="send-panel email-send-panel"><div><strong>ส่งอีเมลเอกสารลับ</strong><p>{current.name} · {current.email}</p>{currentEmailHistory?.status==="sent"&&<p className="sent-status">ส่งล่าสุด {new Date(currentEmailHistory.sent_at||currentEmailHistory.created_at).toLocaleString("th-TH")}</p>}{currentEmailHistory?.status==="failed"&&<p className="failed-status">ครั้งล่าสุดส่งไม่สำเร็จ — กดส่งรายคนเพื่อลองอีกครั้ง</p>}{!emailConfigured&&<p className="failed-status">ยังไม่ได้ตั้งค่า Google Workspace บน Vercel</p>}{emailConfigured&&!emailHistoryReady&&<p className="failed-status">ยังไม่ได้สร้างตารางประวัติอีเมลใน Supabase</p>}</div><div className="report-actions"><button className="secondary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("single")}>{sendingEmails==="single"?"กำลังส่ง...":currentEmailHistory?.status==="sent"?"ส่งอีเมลรายคนอีกครั้ง":"ส่งอีเมลรายคน"}</button><button className="primary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("all")}>{sendingEmails==="all"?`กำลังส่ง ${emailProgress.done}/${emailProgress.total}`:`ยืนยันและส่งทั้งหมด (${people.length})`}</button></div></div>{sendingEmails&&<div className="email-progress"><strong>กำลังส่งอีเมล กรุณาอย่าปิดหน้านี้</strong><p>ดำเนินการแล้ว {emailProgress.done} จาก {emailProgress.total} · สำเร็จ {emailProgress.sent} · ไม่สำเร็จ {emailProgress.failed}</p><progress max={emailProgress.total||1} value={emailProgress.done}/></div>}{message&&<div className="message compact">{message}</div>}</div></div>}
       </section>}
     </main>
   </div>;

@@ -5,6 +5,10 @@ import { requireAdmin, supabaseConfig } from "@/lib/supabase-server";
 
 type EvaluationRow = {
   id: string;
+  snapshot_full_name: string;
+  snapshot_position: string;
+  snapshot_national_id: string;
+  snapshot_bank_account: string;
   evaluation_score: number | string | null;
   old_salary: number | string;
   raise_percent: number | string;
@@ -46,6 +50,7 @@ export async function POST(request: Request) {
   const select = [
     "id", "evaluation_score", "old_salary", "raise_percent",
     "comment_1", "comment_2", "comment_3", "comment_4", "comment_5",
+    "snapshot_full_name", "snapshot_position", "snapshot_national_id", "snapshot_bank_account",
     "cycle:evaluation_cycles(academic_year)",
     "employee:employees(full_name,position,national_id,bank_account,active)",
   ].join(",");
@@ -57,7 +62,7 @@ export async function POST(request: Request) {
     console.error("Supabase batch report query failed", response.status, await response.text());
     return NextResponse.json({ error: "อ่านข้อมูลรายงานไม่สำเร็จ" }, { status: 500 });
   }
-  const rows = ((await response.json()) as EvaluationRow[]).filter(row => row.employee?.active !== false);
+  const rows = (await response.json()) as EvaluationRow[];
   if (rows.length !== ids.length) {
     return NextResponse.json({ error: "ข้อมูลบางรายการไม่พร้อมสร้างรายงาน กรุณาโหลดหน้าใหม่แล้วตรวจอีกครั้ง" }, { status: 409 });
   }
@@ -70,17 +75,17 @@ export async function POST(request: Request) {
       const row = orderedRows[index];
       const pdf = await createPersonnelReportPdf({
         academicYear: row.cycle.academic_year,
-        fullName: row.employee.full_name,
-        position: row.employee.position,
-        nationalId: row.employee.national_id,
-        bankAccount: row.employee.bank_account,
+        fullName: row.snapshot_full_name || row.employee.full_name,
+        position: row.snapshot_position || row.employee.position,
+        nationalId: row.snapshot_national_id || row.employee.national_id,
+        bankAccount: row.snapshot_bank_account || row.employee.bank_account,
         evaluationScore: row.evaluation_score === null ? null : Number(row.evaluation_score),
         oldSalary: Number(row.old_salary),
         raisePercent: Number(row.raise_percent),
         comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
       });
       const order = String(index + 1).padStart(3, "0");
-      zip.file(`${order}_หนังสือแจ้งผลประเมิน_${safeFileName(row.employee.full_name)}_ลับ.pdf`, pdf);
+      zip.file(`${order}_หนังสือแจ้งผลประเมิน_${safeFileName(row.snapshot_full_name || row.employee.full_name)}_ลับ.pdf`, pdf);
     }
     const archive = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
     const academicYear = orderedRows[0]?.cycle.academic_year ?? 2568;

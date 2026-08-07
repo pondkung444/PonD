@@ -35,13 +35,14 @@ export async function POST(request: Request) {
 
   const { baseUrl, headers } = supabaseConfig();
   const [cycleResponse, existingResponse] = await Promise.all([
-    fetch(`${baseUrl}/rest/v1/evaluation_cycles?select=id,academic_year&academic_year=eq.${academicYear}&limit=1`, { headers, cache: "no-store" }),
+    fetch(`${baseUrl}/rest/v1/evaluation_cycles?select=id,academic_year,status&academic_year=eq.${academicYear}&limit=1`, { headers, cache: "no-store" }),
     fetch(`${baseUrl}/rest/v1/employees?select=id,employee_code,full_name,email,position,national_id,bank_account,personnel_group,active`, { headers, cache: "no-store" }),
   ]);
   if (!cycleResponse.ok) return databaseError(cycleResponse);
   if (!existingResponse.ok) return databaseError(existingResponse);
-  const [cycle] = (await cycleResponse.json()) as { id: string; academic_year: number }[];
+  const [cycle] = (await cycleResponse.json()) as { id: string; academic_year: number; status: string }[];
   if (!cycle) return NextResponse.json({ error: `ยังไม่ได้สร้างรอบประเมินปี ${academicYear}` }, { status: 400 });
+  if (cycle.status === "closed") return NextResponse.json({ error: `รอบปี ${academicYear} ปิดแล้ว จึงนำเข้าข้อมูลไม่ได้` }, { status: 409 });
   const existing = (await existingResponse.json()) as EmployeeRecord[];
   const comparison = compareRows(normalized, existing);
 
@@ -80,6 +81,9 @@ export async function POST(request: Request) {
       old_salary: row.old_salary, raise_percent: row.raise_percent,
       comment_1: row.comments[0] ?? "", comment_2: row.comments[1] ?? "", comment_3: row.comments[2] ?? "",
       comment_4: row.comments[3] ?? "", comment_5: row.comments[4] ?? "", status: "draft", updated_at: now,
+      snapshot_full_name: row.full_name, snapshot_email: row.email, snapshot_position: row.position,
+      snapshot_national_id: row.national_id, snapshot_bank_account: row.bank_account,
+      snapshot_personnel_group: row.personnel_group, snapshot_source_sheet: row.personnel_group,
     };
   });
   const evaluationResponse = await fetch(`${baseUrl}/rest/v1/evaluations?on_conflict=cycle_id,employee_id`, {
@@ -90,7 +94,7 @@ export async function POST(request: Request) {
 
   const batchResponse = await fetch(`${baseUrl}/rest/v1/import_batches`, {
     method: "POST", headers: { ...headers, Prefer: "return=minimal" },
-    body: JSON.stringify([{ file_name: String(body.fileName || "excel-import.xlsx").slice(0, 250), imported_rows: normalized.length, rejected_rows: 0 }]),
+    body: JSON.stringify([{ cycle_id: cycle.id, file_name: String(body.fileName || "excel-import.xlsx").slice(0, 250), imported_rows: normalized.length, rejected_rows: 0 }]),
   });
   if (!batchResponse.ok) return databaseError(batchResponse);
 
