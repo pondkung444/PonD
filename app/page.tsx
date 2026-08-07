@@ -46,6 +46,9 @@ export default function Home() {
   const [loginEmail,setLoginEmail] = useState("panuwat.pond@gmail.com");
   const [loginPassword,setLoginPassword] = useState("");
   const [authError,setAuthError] = useState("");
+  const [recoveryToken,setRecoveryToken] = useState<string|null>(null);
+  const [newPassword,setNewPassword] = useState("");
+  const [resetMessage,setResetMessage] = useState("");
   const [saving,setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const current=people[selected] ?? sample[0];
@@ -53,6 +56,10 @@ export default function Home() {
   const increase=Math.round(current.oldSalary*current.raisePercent/100);
 
   useEffect(()=>{
+    const hash=new URLSearchParams(window.location.hash.replace(/^#/,""));
+    if(hash.get("type")==="recovery"&&hash.get("access_token")){
+      setRecoveryToken(hash.get("access_token"));setAuthReady(true);window.history.replaceState({},"",window.location.pathname);return;
+    }
     const saved=window.localStorage.getItem("psu_admin_token");
     if(!saved){setAuthReady(true);return;}
     setToken(saved); void loadPeople(saved).finally(()=>setAuthReady(true));
@@ -81,6 +88,24 @@ export default function Home() {
     const data=await response.json();
     if(!response.ok){setAuthError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");return;}
     window.localStorage.setItem("psu_admin_token",data.access_token);setToken(data.access_token);setAuthReady(true);await loadPeople(data.access_token);
+  }
+
+  async function requestRecovery(){
+    setAuthError("");setResetMessage("");
+    const base=process.env.NEXT_PUBLIC_SUPABASE_URL;const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(!base||!key){setAuthError("ระบบยังไม่ได้ตั้งค่า Supabase");return;}
+    const response=await fetch(`${base}/auth/v1/recover`,{method:"POST",headers:{apikey:key,"Content-Type":"application/json"},body:JSON.stringify({email:loginEmail,redirect_to:window.location.origin})});
+    if(!response.ok){setAuthError("ส่งลิงก์ตั้งรหัสผ่านไม่สำเร็จ");return;}
+    setResetMessage(`ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่ ${loginEmail} แล้ว`);
+  }
+
+  async function updatePassword(e:React.FormEvent){
+    e.preventDefault();setAuthError("");
+    const base=process.env.NEXT_PUBLIC_SUPABASE_URL;const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(!base||!key||!recoveryToken)return;
+    const response=await fetch(`${base}/auth/v1/user`,{method:"PUT",headers:{apikey:key,Authorization:`Bearer ${recoveryToken}`,"Content-Type":"application/json"},body:JSON.stringify({password:newPassword})});
+    if(!response.ok){setAuthError("ตั้งรหัสผ่านไม่สำเร็จ ลิงก์อาจหมดอายุ");return;}
+    window.localStorage.setItem("psu_admin_token",recoveryToken);setToken(recoveryToken);setRecoveryToken(null);await loadPeople(recoveryToken);
   }
 
   async function saveCurrent(){
@@ -129,7 +154,8 @@ export default function Home() {
   const ready=people.length-errors.length;
 
   if(!authReady)return <main className="login-page"><div className="login-card"><h1>กำลังโหลดระบบ</h1><p>กรุณารอสักครู่</p></div></main>;
-  if(!token)return <main className="login-page"><form className="login-card" onSubmit={login}><div className="logo">ป</div><h1>เข้าสู่ระบบผู้ดูแล</h1><p>ระบบแจ้งผลประเมินบุคลากร</p><label>อีเมล<input type="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} required/></label><label>รหัสผ่าน<input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} required/></label>{authError&&<div className="alert">{authError}</div>}<button className="primary" type="submit">เข้าสู่ระบบ</button></form></main>;
+  if(recoveryToken)return <main className="login-page"><form className="login-card" onSubmit={updatePassword}><div className="logo">ป</div><h1>ตั้งรหัสผ่านใหม่</h1><p>กรอกรหัสผ่านอย่างน้อย 8 ตัวอักษร</p><label>รหัสผ่านใหม่<input type="password" minLength={8} value={newPassword} onChange={e=>setNewPassword(e.target.value)} required/></label>{authError&&<div className="alert">{authError}</div>}<button className="primary" type="submit">บันทึกรหัสผ่านใหม่</button></form></main>;
+  if(!token)return <main className="login-page"><form className="login-card" onSubmit={login}><div className="logo">ป</div><h1>เข้าสู่ระบบผู้ดูแล</h1><p>ระบบแจ้งผลประเมินบุคลากร</p><label>อีเมล<input type="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} required/></label><label>รหัสผ่าน<input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} required/></label>{authError&&<div className="alert">{authError}</div>}{resetMessage&&<div className="message compact">{resetMessage}</div>}<button className="primary" type="submit">เข้าสู่ระบบ</button><button className="link-button" type="button" onClick={requestRecovery}>ลืมรหัสผ่าน</button></form></main>;
 
   return <div className="app-shell">
     <header className="topbar"><div className="identity"><div className="logo">ป</div><div><strong>ระบบแจ้งผลประเมินบุคลากร</strong><span>โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</span></div></div><div className="cycle">ปีการศึกษา 2568</div></header>
