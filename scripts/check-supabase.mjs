@@ -21,7 +21,7 @@ if (missing.length) {
 
 const baseUrl = env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/, "");
 let host = "invalid";
-try { host = new URL(baseUrl).host; } catch {}
+try { host = new URL(baseUrl).host; } catch { host = "invalid"; }
 const health = await fetch(`${baseUrl}/auth/v1/health`);
 const response = await fetch(`${baseUrl}/rest/v1/`, {
   headers: {

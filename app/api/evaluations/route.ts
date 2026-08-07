@@ -14,13 +14,14 @@ export async function GET(request: Request) {
   const [cycle] = (await cycleResponse.json()) as { id: string; academic_year: number }[];
   if (!cycle) return NextResponse.json({ error: "ไม่พบรอบประเมินปี 2568" }, { status: 404 });
 
-  const query = "select=id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,employee:employees(id,employee_code,full_name,email,position,source_sheet)&cycle_id=eq.";
+  const query = "select=id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,employee:employees(id,employee_code,full_name,email,position,national_id,bank_account,personnel_group,source_sheet,active)&cycle_id=eq.";
   const response = await fetch(`${baseUrl}/rest/v1/evaluations?${query}${cycle.id}&order=created_at.asc`, {
     headers,
     cache: "no-store",
   });
   if (!response.ok) return databaseError(response);
-  return NextResponse.json({ academicYear: cycle.academic_year, rows: await response.json() });
+  const rows = (await response.json()) as { employee?: { active?: boolean } }[];
+  return NextResponse.json({ academicYear: cycle.academic_year, rows: rows.filter((row) => row.employee?.active !== false) });
 }
 
 export async function PATCH(request: Request) {
@@ -29,6 +30,7 @@ export async function PATCH(request: Request) {
   }
   const body = (await request.json()) as {
     evaluationId?: string; employeeId?: string; name?: string; email?: string; position?: string;
+    nationalId?: string; bankAccount?: string;
     score?: number | null; oldSalary?: number; raisePercent?: number; comments?: string[];
   };
   if (!body.evaluationId || !body.employeeId) {
@@ -50,6 +52,8 @@ export async function PATCH(request: Request) {
     full_name: body.name?.trim() ?? "",
     email: body.email?.trim().toLowerCase() ?? "",
     position: body.position?.trim() ?? "",
+    national_id: body.nationalId?.trim() ?? "",
+    bank_account: body.bankAccount?.trim() ?? "",
     updated_at: new Date().toISOString(),
   };
   const [evaluationResponse, employeeResponse] = await Promise.all([

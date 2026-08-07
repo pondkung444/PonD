@@ -1,0 +1,51 @@
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.email-send-panel {
+  border-color: #b7cfc0;
+  background: #f8fcf9;
+}
+
+.sent-status {
+  margin-top: 5px;
+  color: #17643a;
+  font-weight: 700;
+}
+
+.failed-status {
+  margin-top: 5px;
+  color: #8a4b00;
+  font-weight: 700;
+}
+
+.email-progress {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid #b7cfc0;
+  border-radius: 10px;
+  background: #f8fcf9;
+}
+
+.email-progress p {
+  margin: 5px 0 10px;
+}
+
+.email-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: #17643a;
+}
+
+@media (max-width: 800px) {
+  .report-actions {
+    justify-content: stretch;
+  }
+
+  .report-actions button {
+    flex: 1 1 auto;
+  }
+}

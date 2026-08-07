@@ -59,7 +59,13 @@ if (!baseUrl || !secret) throw new Error("Supabase environment is incomplete");
 if (rejected.length) throw new Error("Import stopped: fix rejected records first");
 
 const headers = { apikey: secret, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" };
-const employeePayload = valid.map(({ evaluation_score, raise_percent, old_salary, ...employee }) => employee);
+const employeePayload = valid.map((person) => {
+  const employee = { ...person };
+  delete employee.evaluation_score;
+  delete employee.raise_percent;
+  delete employee.old_salary;
+  return employee;
+});
 const employeeResponse = await fetch(`${baseUrl}/rest/v1/employees?on_conflict=employee_code`, { method: "POST", headers, body: JSON.stringify(employeePayload) });
 if (!employeeResponse.ok) throw new Error(`Employee import failed (${employeeResponse.status}): ${await employeeResponse.text()}`);
 const savedEmployees = await employeeResponse.json();

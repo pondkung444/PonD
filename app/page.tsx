@@ -5,22 +5,31 @@ import * as XLSX from "xlsx";
 
 type Person = {
   id: string; employeeId?: string; evaluationId?: string; name: string; email: string; position: string;
+  status: "ปฏิบัติงาน"|"พ้นสภาพ"; nationalId: string; bankAccount: string;
   score: number | null; raisePercent: number; oldSalary: number;
   comments: string[]; source: string;
 };
 
+type Comparison = { total:number; existing:number; newPeople:string[]; departing:string[]; changed:string[]; missing:string[] };
+type ImportPreview = { fileName: string; rows: Person[]; sheetCount: number; groupCounts: Record<string,number>; issues: string[]; comparison?:Comparison };
+type ApiEvaluationRow = { id:string; evaluation_score:number|string|null; old_salary:number|string; raise_percent:number|string; comment_1:string; comment_2:string; comment_3:string; comment_4:string; comment_5:string; employee:{ id:string; employee_code:string|null; full_name:string; email:string; position:string; national_id:string; bank_account:string; active:boolean; source_sheet:string|null } };
+type EmailHistoryRow = { id:string; evaluation_id:string; status:"queued"|"sending"|"sent"|"failed"; sent_at:string|null; created_at:string; recipient_email:string; error_message:string|null };
+
 const sample: Person[] = [
-  { id:"EMP-001", name:"นางสาวตัวอย่าง หนึ่ง", email:"person1@school.ac.th", position:"ครูประจำการวิชาคณิตศาสตร์", score:88.5, raisePercent:4, oldSalary:24200, comments:["มีความรับผิดชอบและพัฒนาการจัดการเรียนรู้อย่างต่อเนื่อง",""], source:"ตัวอย่าง" },
-  { id:"EMP-002", name:"นายตัวอย่าง สอง", email:"person2@school.ac.th", position:"ครูประจำการวิชาวิทยาศาสตร์", score:84, raisePercent:3.5, oldSalary:21800, comments:["ควรพัฒนาการจัดเก็บหลักฐานผลการปฏิบัติงานให้เป็นระบบ",""], source:"ตัวอย่าง" },
-  { id:"EMP-003", name:"นางตัวอย่าง สาม", email:"", position:"เจ้าหน้าที่บริหารงานทั่วไป", score:null, raisePercent:0, oldSalary:19500, comments:[""], source:"ตัวอย่าง" },
+  { id:"EMP-001", status:"ปฏิบัติงาน", name:"นางสาวตัวอย่าง หนึ่ง", email:"person1@school.ac.th", position:"ครูประจำการวิชาคณิตศาสตร์", nationalId:"1-2345-67890-12-3", bankAccount:"123-4-56789-0", score:88.5, raisePercent:4, oldSalary:24200, comments:["มีความรับผิดชอบและพัฒนาการจัดการเรียนรู้อย่างต่อเนื่อง",""], source:"ตัวอย่าง" },
+  { id:"EMP-002", status:"ปฏิบัติงาน", name:"นายตัวอย่าง สอง", email:"person2@school.ac.th", position:"ครูประจำการวิชาวิทยาศาสตร์", nationalId:"2-3456-78901-23-4", bankAccount:"234-5-67890-1", score:84, raisePercent:3.5, oldSalary:21800, comments:["ควรพัฒนาการจัดเก็บหลักฐานผลการปฏิบัติงานให้เป็นระบบ",""], source:"ตัวอย่าง" },
+  { id:"EMP-003", status:"ปฏิบัติงาน", name:"นางตัวอย่าง สาม", email:"", position:"เจ้าหน้าที่บริหารงานทั่วไป", nationalId:"", bankAccount:"", score:null, raisePercent:0, oldSalary:19500, comments:[""], source:"ตัวอย่าง" },
 ];
 
 const keys = {
   name:["ชื่อ-สกุล","ชื่อ–สกุล","ชื่อ - สกุล","ชื่อ-นามสกุล"],
+  status:["สถานะปีนี้","สถานะ"],
   email:["อีเมล","email"], position:["ตำแหน่ง","position"],
   score:["ผลประเมิน(%)","ผลประเมิน (%)","ผลประเมิน"],
   raise:["ร้อยละที่เพิิ่ม","ร้อยละที่เพิ่ม","ร้อยละที่ปรับขึ้น"],
   old:["เงินเดือนเดิม","old salary"], id:["รหัสบุคลากร","รหัสพนักงาน","เลขประจำตัว"],
+  nationalId:["เลขบัตรประชาชน","เลขประจำตัวประชาชน","เลขประจำตัวประชาชน/ผู้เสียภาษี"],
+  bankAccount:["เลขบัญชีธนาคาร","เข้าบัญชีธนาคารไทยพาณิชย์ เลขที่"],
   comments:[
     ["ข้อเสนอแนะ","ข้อเสนอแนะ 1","ข้อเสนอแนะ1"],
     ["ข้อเสนอแนะ 2","ข้อเสนอแนะ2"],
@@ -36,6 +45,31 @@ function pick(row: Record<string, unknown>, names: string[]) {
 }
 const num = (v: unknown) => Number(String(v ?? "").replace(/,/g,"")) || 0;
 
+function validateImport(rows:Person[]){
+  const allowed=new Set(["ผู้บริหาร","หัวหน้าฝ่าย","หัวหน้ากลุ่มสาระ","บุคลากร","หอพัก","แม่บ้าน-รปภ"]);
+  const issues:string[]=[];const emails=new Set<string>();const codes=new Set<string>();const nationalIds=new Set<string>();
+  rows.forEach((person,index)=>{
+    const label=`แถว ${index+1}${person.name?` (${person.name})`:""}`;
+    if(!allowed.has(person.source))issues.push(`${label}: ชื่อแท็บไม่ถูกต้อง`);
+    if(person.status!=="ปฏิบัติงาน"&&person.status!=="พ้นสภาพ")issues.push(`${label}: สถานะปีนี้ไม่ถูกต้อง`);
+    if(!person.name)issues.push(`${label}: ไม่มีชื่อ–สกุล`);
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email))issues.push(`${label}: อีเมลไม่ถูกต้อง`);
+    if(!person.position)issues.push(`${label}: ไม่มีตำแหน่ง`);
+    if(!person.nationalId)issues.push(`${label}: ไม่มีเลขบัตรประชาชน/เลขผู้เสียภาษี`);
+    if(!person.bankAccount)issues.push(`${label}: ไม่มีเลขบัญชีธนาคาร`);
+    if(person.status==="ปฏิบัติงาน"&&person.oldSalary<=0)issues.push(`${label}: เงินเดือนเดิมไม่ถูกต้อง`);
+    const email=person.email.toLowerCase();const code=person.id.toLowerCase();const national=person.nationalId.replace(/[-\s]/g,"").toLowerCase();
+    if(email&&emails.has(email))issues.push(`${label}: อีเมลซ้ำ`);else emails.add(email);
+    if(code&&codes.has(code))issues.push(`${label}: รหัสบุคลากรซ้ำ`);else if(code)codes.add(code);
+    if(national&&nationalIds.has(national))issues.push(`${label}: เลขบัตรประชาชนซ้ำ`);else nationalIds.add(national);
+  });
+  return issues;
+}
+
+function serializeImportRows(rows:Person[]){
+  return rows.map(person=>({code:person.id,status:person.status,name:person.name,email:person.email,position:person.position,nationalId:person.nationalId,bankAccount:person.bankAccount,score:person.score,oldSalary:person.oldSalary,raisePercent:person.raisePercent,comments:person.comments,source:person.source}));
+}
+
 export default function Home() {
   const [people,setPeople] = useState<Person[]>(sample);
   const [selected,setSelected] = useState(0);
@@ -50,19 +84,37 @@ export default function Home() {
   const [newPassword,setNewPassword] = useState("");
   const [resetMessage,setResetMessage] = useState("");
   const [saving,setSaving] = useState(false);
+  const [pdfLoading,setPdfLoading] = useState<"preview"|"download"|null>(null);
+  const [batchPdfLoading,setBatchPdfLoading] = useState(false);
+  const [emailHistory,setEmailHistory] = useState<Record<string,EmailHistoryRow>>({});
+  const [emailDelivered,setEmailDelivered] = useState<Record<string,boolean>>({});
+  const [emailConfigured,setEmailConfigured] = useState(false);
+  const [emailHistoryReady,setEmailHistoryReady] = useState(false);
+  const [emailTestRecipient,setEmailTestRecipient] = useState("");
+  const [sendingEmails,setSendingEmails] = useState<"test"|"single"|"all"|null>(null);
+  const [emailProgress,setEmailProgress] = useState({done:0,total:0,sent:0,failed:0});
+  const [pendingImport,setPendingImport] = useState<ImportPreview|null>(null);
+  const [importing,setImporting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const current=people[selected] ?? sample[0];
-  const errors=useMemo(()=>people.map((p,i)=>({i,items:[!p.name&&"ไม่มีชื่อ",!p.email&&"ไม่มีอีเมล",p.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)&&"อีเมลไม่ถูกต้อง",p.oldSalary<=0&&"ไม่มีเงินเดือนเดิม",p.score===null&&"ยังไม่มีผลประเมิน"].filter(Boolean) as string[]})).filter(x=>x.items.length),[people]);
+  const errors=useMemo(()=>people.map((p,i)=>({i,items:[!p.name&&"ไม่มีชื่อ",!p.email&&"ไม่มีอีเมล",p.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)&&"อีเมลไม่ถูกต้อง",!p.nationalId&&"ไม่มีเลขบัตรประชาชน",!p.bankAccount&&"ไม่มีเลขบัญชีธนาคาร",p.oldSalary<=0&&"ไม่มีเงินเดือนเดิม",p.score===null&&"ยังไม่มีผลประเมิน"].filter(Boolean) as string[]})).filter(x=>x.items.length),[people]);
   const increase=Math.round(current.oldSalary*current.raisePercent/100);
+  const currentEmailHistory=current.evaluationId?emailHistory[current.evaluationId]:undefined;
 
   useEffect(()=>{
-    const hash=new URLSearchParams(window.location.hash.replace(/^#/,""));
-    if(hash.get("type")==="recovery"&&hash.get("access_token")){
-      setRecoveryToken(hash.get("access_token"));setAuthReady(true);window.history.replaceState({},"",window.location.pathname);return;
+    async function initialize(){
+      await Promise.resolve();
+      const hash=new URLSearchParams(window.location.hash.replace(/^#/,""));
+      if(hash.get("type")==="recovery"&&hash.get("access_token")){
+        setRecoveryToken(hash.get("access_token"));setAuthReady(true);window.history.replaceState({},"",window.location.pathname);return;
+      }
+      const saved=window.localStorage.getItem("psu_admin_token");
+      if(!saved){setAuthReady(true);return;}
+      setToken(saved);await loadPeople(saved);setAuthReady(true);
     }
-    const saved=window.localStorage.getItem("psu_admin_token");
-    if(!saved){setAuthReady(true);return;}
-    setToken(saved); void loadPeople(saved).finally(()=>setAuthReady(true));
+    void initialize();
+    // Initial authentication bootstrap intentionally runs once on page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
   async function loadPeople(accessToken:string){
@@ -70,14 +122,24 @@ export default function Home() {
     if(response.status===401){window.localStorage.removeItem("psu_admin_token");setToken(null);setAuthError("กรุณาเข้าสู่ระบบอีกครั้ง");return;}
     const data=await response.json();
     if(!response.ok){setMessage(data.error??"โหลดข้อมูลไม่สำเร็จ");return;}
-    const loaded:Person[]=data.rows.map((row:any)=>({
+    const loaded:Person[]=data.rows.map((row:ApiEvaluationRow)=>({
       id:row.employee.employee_code||row.employee.id, employeeId:row.employee.id, evaluationId:row.id,
-      name:row.employee.full_name, email:row.employee.email, position:row.employee.position,
+      status:row.employee.active===false?"พ้นสภาพ":"ปฏิบัติงาน", name:row.employee.full_name, email:row.employee.email, position:row.employee.position,
+      nationalId:row.employee.national_id||"", bankAccount:row.employee.bank_account||"",
       score:row.evaluation_score===null?null:Number(row.evaluation_score), raisePercent:Number(row.raise_percent),
       oldSalary:Number(row.old_salary), comments:[row.comment_1,row.comment_2,row.comment_3,row.comment_4,row.comment_5],
       source:row.employee.source_sheet||"Supabase",
     }));
-    setPeople(loaded);setSelected(0);setMessage(`โหลดข้อมูลจริงแล้ว ${loaded.length} คน`);
+    setPeople(loaded);setSelected(0);setMessage(`โหลดข้อมูลจริงแล้ว ${loaded.length} คน`);void loadEmailHistory(accessToken);
+  }
+
+  async function loadEmailHistory(accessToken:string){
+    const response=await fetch("/api/emails",{headers:{Authorization:`Bearer ${accessToken}`},cache:"no-store"});
+    if(!response.ok)return;
+    const data=await response.json();setEmailConfigured(Boolean(data.configured));setEmailHistoryReady(Boolean(data.historyReady));setEmailTestRecipient(String(data.testRecipient||""));
+    const latest:Record<string,EmailHistoryRow>={};const delivered:Record<string,boolean>={};
+    (data.rows as EmailHistoryRow[]).forEach(row=>{if(!latest[row.evaluation_id])latest[row.evaluation_id]=row;if(row.status==="sent")delivered[row.evaluation_id]=true;});
+    setEmailHistory(latest);setEmailDelivered(delivered);
   }
 
   async function login(e:React.FormEvent){
@@ -116,6 +178,70 @@ export default function Home() {
     setMessage(response.ok?`บันทึกข้อมูลของ ${current.name} แล้ว`:data.error??"บันทึกไม่สำเร็จ");
   }
 
+  async function openPdf(mode:"preview"|"download"){
+    if(!token||!current.evaluationId){setMessage("รายการนี้ยังไม่ได้เชื่อมกับฐานข้อมูล");return;}
+    const previewWindow=mode==="preview"?window.open("","_blank"):null;
+    if(previewWindow){previewWindow.document.title="กำลังสร้าง PDF";previewWindow.document.body.textContent="กำลังสร้าง PDF กรุณารอสักครู่...";}
+    setPdfLoading(mode);setMessage("");
+    try{
+      const response=await fetch(`/api/reports/${encodeURIComponent(current.evaluationId)}/pdf`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error??"สร้าง PDF ไม่สำเร็จ");}
+      const blob=await response.blob();const url=URL.createObjectURL(blob);
+      if(mode==="preview"){
+        if(previewWindow)previewWindow.location.href=url;else window.open(url,"_blank");
+        window.setTimeout(()=>URL.revokeObjectURL(url),60_000);
+      }else{
+        const link=document.createElement("a");link.href=url;link.download=`หนังสือแจ้งผลประเมิน_${current.name}_ลับ.pdf`;document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1_000);
+      }
+    }catch(error){previewWindow?.close();setMessage(error instanceof Error?error.message:"สร้าง PDF ไม่สำเร็จ");}
+    finally{setPdfLoading(null);}
+  }
+
+  async function downloadAllPdfs(){
+    if(!token){setMessage("กรุณาเข้าสู่ระบบอีกครั้ง");return;}
+    const evaluationIds=people.map(person=>person.evaluationId).filter((id):id is string=>Boolean(id));
+    if(evaluationIds.length!==people.length){setMessage("มีบุคลากรบางรายที่ยังไม่ได้เชื่อมกับฐานข้อมูล");return;}
+    setBatchPdfLoading(true);setMessage("");
+    try{
+      const response=await fetch("/api/reports/batch",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({evaluationIds})});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error??"สร้างชุด PDF ไม่สำเร็จ");}
+      const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");
+      link.href=url;link.download="หนังสือแจ้งผลประเมิน_บุคลากรทั้งหมด_2568_ลับ.zip";document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1_000);
+      setMessage(`สร้าง PDF ครบ ${evaluationIds.length} คนแล้ว`);
+    }catch(error){setMessage(error instanceof Error?error.message:"สร้างชุด PDF ไม่สำเร็จ");}
+    finally{setBatchPdfLoading(false);}
+  }
+
+  async function sendEmails(mode:"test"|"single"|"all"){
+    if(!token){setMessage("กรุณาเข้าสู่ระบบอีกครั้ง");return;}
+    if(!emailConfigured){setMessage("ยังไม่ได้ตั้งค่า Google Workspace บน Vercel");return;}
+    if(!emailHistoryReady){setMessage("ยังไม่ได้สร้างตารางประวัติอีเมลใน Supabase");return;}
+    const targets=mode==="single"||mode==="test"?[current]:people.filter(person=>!person.evaluationId||!emailDelivered[person.evaluationId]);
+    if(!targets.length){setMessage("บุคลากรทุกคนส่งสำเร็จแล้ว หากต้องการส่งซ้ำให้เลือกและกดส่งรายคน");return;}
+    const evaluationIds=targets.map(person=>person.evaluationId).filter((id):id is string=>Boolean(id));
+    if(evaluationIds.length!==targets.length){setMessage("มีรายการที่ยังไม่ได้เชื่อมกับฐานข้อมูล");return;}
+    const confirmation=mode==="test"
+      ?`ยืนยันส่งอีเมลทดสอบไปที่\n${emailTestRecipient}\n\nPDF ที่แนบเป็นข้อมูลจริงของ ${current.name} แต่จะไม่บันทึกว่าบุคลากรได้รับแล้ว`
+      :mode==="single"
+      ?`ยืนยันส่งเอกสารลับให้\n${current.name}\n${current.email}\n\nระบบจะส่ง PDF ของบุคคลนี้อีกครั้ง`
+      :`ยืนยันส่งเอกสารลับให้บุคลากร ${targets.length} คน\n\nแต่ละคนจะได้รับเฉพาะ PDF ของตนเอง กรุณาตรวจอีเมลผู้รับแล้ว`;
+    if(!window.confirm(confirmation))return;
+    const requestId=crypto.randomUUID();let sent=0;let failed=0;let done=0;
+    setSendingEmails(mode);setEmailProgress({done:0,total:evaluationIds.length,sent:0,failed:0});setMessage("");
+    try{
+      for(let start=0;start<evaluationIds.length;start+=5){
+        const chunk=evaluationIds.slice(start,start+5);
+        const response=await fetch("/api/emails",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({requestId,evaluationIds:chunk,test:mode==="test"})});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.error??"ส่งอีเมลไม่สำเร็จ");
+        for(const result of data.results as {status:"sent"|"failed"|"skipped"}[]){if(result.status==="failed")failed+=1;else sent+=1;done+=1;}
+        setEmailProgress({done,total:evaluationIds.length,sent,failed});
+      }
+      setMessage(mode==="test"&&!failed?`ส่งอีเมลทดสอบไปที่ ${emailTestRecipient} แล้ว`:failed?`ส่งสำเร็จ ${sent} คน · ไม่สำเร็จ ${failed} คน สามารถส่งซ้ำเป็นรายคนได้`:`ส่งอีเมลสำเร็จครบ ${sent} คน`);
+    }catch(error){setMessage(error instanceof Error?error.message:"ส่งอีเมลไม่สำเร็จ");}
+    finally{setSendingEmails(null);await loadEmailHistory(token);}
+  }
+
   async function importExcel(file: File) {
     try {
       const data=await file.arrayBuffer(); const wb=XLSX.read(data,{type:"array"});
@@ -130,23 +256,33 @@ export default function Home() {
       });
       const imported=rows.filter(r=>pick(r,keys.name)).map((r,i):Person=>({
         id:String(pick(r,keys.id)??`EMP-${String(i+1).padStart(3,"0")}`), name:String(pick(r,keys.name)??""),
-        email:String(pick(r,keys.email)??"").trim(), position:String(pick(r,keys.position)??""),
+        status:String(pick(r,keys.status)??"ปฏิบัติงาน").trim()==="พ้นสภาพ"?"พ้นสภาพ":"ปฏิบัติงาน",
+        email:String(pick(r,keys.email)??"").trim().toLowerCase(), position:String(pick(r,keys.position)??""),
+        nationalId:String(pick(r,keys.nationalId)??"").trim(), bankAccount:String(pick(r,keys.bankAccount)??"").trim(),
         score:pick(r,keys.score)===""||pick(r,keys.score)==null?null:num(pick(r,keys.score)),
         raisePercent:num(pick(r,keys.raise)), oldSalary:num(pick(r,keys.old)),
         comments:keys.comments.map(names=>String(pick(r,names)??"").trim()), source:String(r.__sheet??"")
       }));
       if(!imported.length) throw new Error("ไม่พบตารางบุคลากรในรูปแบบที่รองรับ");
-      const unique=imported.filter((p,i,a)=>a.findIndex(x=>x.email&&x.email===p.email)>=i || !p.email);
-      setPeople(existing=>{
-        const next=[...existing];
-        for(const importedPerson of unique){
-          const index=next.findIndex(person=>(importedPerson.email&&person.email.toLowerCase()===importedPerson.email.toLowerCase())||person.name.trim()===importedPerson.name.trim());
-          if(index>=0){const saved=next[index];next[index]={...saved,...importedPerson,id:saved.id,employeeId:saved.employeeId,evaluationId:saved.evaluationId};}
-          else next.push(importedPerson);
-        }
-        return next;
-      }); setSelected(0); setStep("review"); setMessage(`นำเข้าสำเร็จ ${unique.length} คน จาก ${wb.SheetNames.length} ชีต`);
+      const issues=validateImport(imported);
+      const groupCounts=imported.reduce<Record<string,number>>((result,person)=>{result[person.source]=(result[person.source]??0)+1;return result;},{});
+      if(issues.length){setPendingImport({fileName:file.name,rows:imported,sheetCount:Object.keys(groupCounts).length,groupCounts,issues});setMessage(`พบข้อมูลที่ต้องแก้ ${issues.length} จุด`);return;}
+      if(!token)throw new Error("กรุณาเข้าสู่ระบบอีกครั้ง");
+      const previewResponse=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear:2568,fileName:file.name,confirm:false,rows:serializeImportRows(imported)})});
+      const previewData=await previewResponse.json();
+      if(!previewResponse.ok)throw new Error(previewData.issues?.slice(0,5).map((issue:{name?:string;message:string})=>`${issue.name||"รายการ"}: ${issue.message}`).join(" · ")||previewData.error||"ตรวจไฟล์ไม่สำเร็จ");
+      setPendingImport({fileName:file.name,rows:imported,sheetCount:Object.keys(groupCounts).length,groupCounts,issues:[],comparison:previewData.preview});
+      setMessage(previewData.preview.missing.length?`พบคนที่ไม่อยู่ในไฟล์ ${previewData.preview.missing.length} คน กรุณาตรวจสอบ`:`ตรวจไฟล์แล้ว ${imported.length} คน กรุณายืนยันก่อนบันทึก`);
     } catch (e) { setMessage(e instanceof Error?e.message:"อ่านไฟล์ไม่สำเร็จ"); }
+  }
+
+  async function confirmImport(){
+    if(!token||!pendingImport||pendingImport.issues.length)return;
+    setImporting(true);setMessage("");
+    const response=await fetch("/api/imports",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({academicYear:2568,fileName:pendingImport.fileName,confirm:true,rows:serializeImportRows(pendingImport.rows)})});
+    const data=await response.json();setImporting(false);
+    if(!response.ok){setMessage(data.issues?.slice(0,5).map((issue:{row:number;name?:string;message:string})=>`${issue.name||`รายการ ${issue.row}`}: ${issue.message}`).join(" · ")||data.error||"นำเข้าไม่สำเร็จ");return;}
+    setPendingImport(null);await loadPeople(token);setStep("review");setMessage(`บันทึกข้อมูลแล้ว ${data.importedEmployees} คน`);
   }
 
   function update(patch:Partial<Person>){setPeople(list=>list.map((p,i)=>i===selected?{...p,...patch}:p));}
@@ -171,7 +307,8 @@ export default function Home() {
           <input ref={inputRef} type="file" accept=".xlsx,.xls" hidden onChange={e=>e.target.files?.[0]&&importExcel(e.target.files[0])}/>
         </div>
         {message&&<div className="message">{message}</div>}
-        <div className="safe-note"><strong>ข้อมูลที่ระบบใช้</strong><span>ชื่อ–สกุล · ตำแหน่ง · อีเมล · ผลประเมิน · ร้อยละที่เพิ่ม · เงินเดือนเดิม · ข้อเสนอแนะ 1–5 (ถ้ามี)</span></div>
+        {pendingImport&&<div className="import-preview"><div><strong>ตรวจพบ {pendingImport.rows.length} คน จาก {pendingImport.sheetCount} กลุ่ม</strong><p>{Object.entries(pendingImport.groupCounts).map(([group,count])=>`${group} ${count} คน`).join(" · ")}</p></div>{pendingImport.comparison&&<div className="compare-grid"><div><span>คนเดิม</span><strong>{pendingImport.comparison.existing}</strong></div><div><span>เข้าใหม่</span><strong>{pendingImport.comparison.newPeople.length}</strong></div><div><span>พ้นสภาพ</span><strong>{pendingImport.comparison.departing.length}</strong></div><div><span>ข้อมูลเปลี่ยน</span><strong>{pendingImport.comparison.changed.length}</strong></div></div>}{pendingImport.comparison?.newPeople.length?<div className="change-note"><strong>คนเข้าใหม่</strong><p>{pendingImport.comparison.newPeople.join(" · ")}</p></div>:null}{pendingImport.comparison?.departing.length?<div className="change-note"><strong>พ้นสภาพ</strong><p>{pendingImport.comparison.departing.join(" · ")}</p></div>:null}{pendingImport.comparison?.missing.length?<div className="alert"><strong>ยังยืนยันไม่ได้ — ไม่พบในไฟล์ {pendingImport.comparison.missing.length} คน</strong><p>{pendingImport.comparison.missing.join(" · ")}</p><p>กรุณากลับไปเพิ่มรายชื่อและเลือกสถานะ “พ้นสภาพ” หรือเพิ่มข้อมูลที่ตกหล่น</p></div>:null}{pendingImport.issues.length>0?<div className="alert"><strong>ยังนำเข้าไม่ได้</strong><ul>{pendingImport.issues.slice(0,8).map((issue,index)=><li key={index}>{issue}</li>)}</ul>{pendingImport.issues.length>8&&<p>และอีก {pendingImport.issues.length-8} จุด</p>}</div>:<div className="import-actions"><button className="secondary" onClick={()=>{setPendingImport(null);setMessage("")}}>เลือกไฟล์ใหม่</button><button className="primary" disabled={importing||Boolean(pendingImport.comparison?.missing.length)} onClick={confirmImport}>{importing?"กำลังบันทึก...":`ยืนยันนำเข้า ${pendingImport.rows.length} คน`}</button></div>}</div>}
+        <div className="safe-note"><strong>ข้อมูลที่ระบบใช้</strong><span>ชื่อ–สกุล · ตำแหน่ง · อีเมล · เลขบัตรประชาชน · บัญชีธนาคาร · ผลประเมิน · ร้อยละที่เพิ่ม · เงินเดือนเดิม · ข้อเสนอแนะ 1–5 (ถ้ามี)</span></div>
       </section>}
       {step==="review"&&<section className="page"><div className="page-title"><div><h1>ตรวจและแก้ไขข้อมูล</h1><p>เลือกบุคลากรทางซ้าย แก้ข้อมูลและกรอกข้อเสนอแนะทางขวา</p></div><button className="primary" disabled={errors.length>0} onClick={()=>setStep("report")}>ดูรายงานทั้งหมด</button></div>
         <div className="stats"><div><span>ทั้งหมด</span><strong>{people.length}</strong></div><div><span>พร้อมแล้ว</span><strong>{ready}</strong></div><div className={errors.length?"warning":""}><span>ต้องตรวจ</span><strong>{errors.length}</strong></div></div>
@@ -179,14 +316,14 @@ export default function Home() {
         <div className="workspace"><aside className="person-list"><div className="list-head">รายชื่อบุคลากร</div>{people.map((p,i)=>{const issue=errors.find(x=>x.i===i);return <button key={`${p.id}-${i}`} className={i===selected?"selected":""} onClick={()=>setSelected(i)}><span><strong>{p.name||"ยังไม่มีชื่อ"}</strong><small>{p.position||"ยังไม่มีตำแหน่ง"}</small></span><em className={issue?"bad":"good"}>{issue?issue.items.length:"✓"}</em></button>})}</aside>
           <div className="editor"><div className="editor-head"><div><h2>{current.name||"ข้อมูลบุคลากร"}</h2><p>แหล่งข้อมูล: {current.source}</p></div><span className={errors.find(x=>x.i===selected)?"pill bad":"pill good"}>{errors.find(x=>x.i===selected)?"ข้อมูลยังไม่ครบ":"พร้อมสร้างรายงาน"}</span></div>
             {errors.find(x=>x.i===selected)&&<div className="alert">กรุณาตรวจ: {errors.find(x=>x.i===selected)?.items.join(" · ")}</div>}
-            <div className="form-grid"><label>ชื่อ–สกุล<input value={current.name} onChange={e=>update({name:e.target.value})}/></label><label>ตำแหน่ง<input value={current.position} onChange={e=>update({position:e.target.value})}/></label><label>อีเมลผู้รับ<input type="email" value={current.email} onChange={e=>update({email:e.target.value})}/></label><label>ผลประเมิน (%)<input type="number" min="0" max="100" step="0.01" value={current.score??""} onChange={e=>update({score:e.target.value===""?null:Number(e.target.value)})}/></label><label>เงินเดือนเดิม (บาท)<input type="number" min="0" value={current.oldSalary||""} onChange={e=>update({oldSalary:Number(e.target.value)})}/></label><label>ร้อยละที่ปรับขึ้น<input type="number" min="0" step="0.01" value={current.raisePercent} onChange={e=>update({raisePercent:Number(e.target.value)})}/></label></div>
+            <div className="form-grid"><label>ชื่อ–สกุล<input value={current.name} onChange={e=>update({name:e.target.value})}/></label><label>ตำแหน่ง<input value={current.position} onChange={e=>update({position:e.target.value})}/></label><label>อีเมลผู้รับ<input type="email" value={current.email} onChange={e=>update({email:e.target.value})}/></label><label>เลขบัตรประชาชน/ผู้เสียภาษี<input value={current.nationalId} onChange={e=>update({nationalId:e.target.value})}/></label><label>เลขบัญชีธนาคาร<input value={current.bankAccount} onChange={e=>update({bankAccount:e.target.value})}/></label><label>ผลประเมิน (%)<input type="number" min="0" max="100" step="0.01" value={current.score??""} onChange={e=>update({score:e.target.value===""?null:Number(e.target.value)})}/></label><label>เงินเดือนเดิม (บาท)<input type="number" min="0" value={current.oldSalary||""} onChange={e=>update({oldSalary:Number(e.target.value)})}/></label><label>ร้อยละที่ปรับขึ้น<input type="number" min="0" step="0.01" value={current.raisePercent||""} onChange={e=>update({raisePercent:Number(e.target.value)})}/></label></div>
             <div className="calculation"><div><span>เงินเดือนเดิม</span><strong>{current.oldSalary.toLocaleString()} บาท</strong></div><div><span>จำนวนเงินที่เพิ่ม</span><strong>{increase.toLocaleString()} บาท</strong></div><div><span>เงินเดือนใหม่</span><strong>{(current.oldSalary+increase).toLocaleString()} บาท</strong></div></div>
             <div className="comments"><div><h3>ข้อเสนอแนะของงานบุคลากร</h3><p>ไม่บังคับกรอก เพิ่มได้สูงสุด 5 ข้อ</p></div>{Array.from({length:5}).map((_,i)=><label key={i}><span>{i+1}.</span><textarea rows={2} placeholder="ข้อเสนอแนะ (ถ้ามี)" value={current.comments[i]??""} onChange={e=>updateComment(i,e.target.value)}/></label>)}</div>
-            <div className="editor-actions"><button className="secondary" disabled={selected===0} onClick={()=>setSelected(Math.max(0,selected-1))}>คนก่อนหน้า</button><button className="primary" disabled={saving} onClick={async()=>{await saveCurrent();if(selected<people.length-1)setSelected(selected+1)}}>{saving?"กำลังบันทึก...":"บันทึกและไปคนถัดไป"}</button></div>
+            <div className="editor-actions"><button className="secondary" disabled={selected===0} onClick={()=>setSelected(Math.max(0,selected-1))}>คนก่อนหน้า</button><div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}><button className="secondary" disabled={Boolean(errors.find(x=>x.i===selected))||pdfLoading!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF รายคน"}</button><button className="primary" disabled={saving} onClick={async()=>{await saveCurrent();if(selected<people.length-1)setSelected(selected+1)}}>{saving?"กำลังบันทึก...":"บันทึกและไปคนถัดไป"}</button></div></div>
           </div></div>
       </section>}
-      {step==="report"&&<section className="page"><div className="page-title"><div><h1>ตรวจรายงานก่อนส่ง</h1><p>ข้อมูลด้านล่างคือข้อมูลที่จะปรากฏใน PDF ของบุคลากร</p></div><button className="secondary" onClick={()=>setStep("review")}>กลับไปแก้ข้อมูล</button></div>
-        {errors.length>0?<div className="blocking"><strong>ยังสร้างรายงานทั้งหมดไม่ได้</strong><p>มีข้อมูลที่ต้องตรวจอีก {errors.length} คน กรุณากลับไปแก้ให้ครบ</p><button className="primary" onClick={()=>{setSelected(errors[0].i);setStep("review")}}>ไปยังรายการแรกที่ต้องแก้</button></div>:<div className="report-layout"><aside className="report-nav">{people.map((p,i)=><button key={p.id} onClick={()=>setSelected(i)} className={i===selected?"selected":""}>{p.name}</button>)}</aside><div><article className="paper"><div className="school">โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</div><h2>หนังสือแจ้งผลการประเมินผลการปฏิบัติงาน<br/>และการปรับขึ้นเงินเดือน ปีการศึกษา 2568</h2><dl><dt>ชื่อ–สกุล</dt><dd>{current.name}</dd><dt>ตำแหน่ง</dt><dd>{current.position}</dd><dt>ผลประเมิน</dt><dd>{current.score?.toFixed(2)}%</dd></dl><div className="salary-table"><div>เงินเดือนเดิม</div><div>ร้อยละที่เพิ่ม</div><div>จำนวนเงินที่เพิ่ม</div><div>เงินเดือนใหม่</div><strong>{current.oldSalary.toLocaleString()}</strong><strong>{current.raisePercent.toFixed(2)}%</strong><strong>{increase.toLocaleString()}</strong><strong>{(current.oldSalary+increase).toLocaleString()}</strong></div>{current.comments.some(c=>c.trim())&&<><h3>ข้อเสนอแนะ</h3><ol>{current.comments.filter(c=>c.trim()).map((c,i)=><li key={i}>{c}</li>)}</ol></>}</article><div className="send-panel"><div><strong>พร้อมสร้างรายงาน {people.length} ฉบับ</strong><p>ขั้นส่งอีเมลจริงจะเปิดหลังยืนยันรูปแบบรายงาน</p></div><button className="primary" onClick={()=>setMessage("บันทึกการตรวจรูปแบบแล้ว — ขั้นถัดไปคือเชื่อมการสร้าง PDF และอีเมลจริง")}>ยืนยันรูปแบบรายงาน</button></div>{message&&<div className="message compact">{message}</div>}</div></div>}
+      {step==="report"&&<section className="page"><div className="page-title"><div><h1>ตรวจรายงานก่อนส่ง</h1><p>ข้อมูลด้านล่างคือข้อมูลที่จะปรากฏใน PDF ของบุคลากร</p></div><div className="report-actions"><button className="secondary" disabled={Boolean(errors.find(x=>x.i===selected))||sendingEmails!==null||!emailConfigured||!emailHistoryReady||!emailTestRecipient} onClick={()=>sendEmails("test")}>{sendingEmails==="test"?"กำลังส่งทดสอบ...":"ส่งอีเมลทดสอบ"}</button><button className="secondary" onClick={()=>setStep("review")}>กลับไปแก้ข้อมูล</button></div></div>
+        {errors.length>0?<div className="blocking"><strong>ยังสร้างรายงานทั้งหมดไม่ได้</strong><p>มีข้อมูลที่ต้องตรวจอีก {errors.length} คน กรุณากลับไปแก้ให้ครบ</p><button className="primary" onClick={()=>{setSelected(errors[0].i);setStep("review")}}>ไปยังรายการแรกที่ต้องแก้</button></div>:<div className="report-layout"><aside className="report-nav">{people.map((p,i)=><button key={p.id} onClick={()=>setSelected(i)} className={i===selected?"selected":""}>{p.name}</button>)}</aside><div><article className="paper"><div className="school">โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</div><h2>หนังสือแจ้งผลการประเมินผลการปฏิบัติงาน<br/>และการปรับขึ้นเงินเดือน ปีการศึกษา 2568</h2><dl><dt>ชื่อ–สกุล</dt><dd>{current.name}</dd><dt>ตำแหน่ง</dt><dd>{current.position}</dd><dt>ผลประเมิน</dt><dd>{current.score?.toFixed(2)}%</dd></dl><div className="salary-table"><div>เงินเดือนเดิม</div><div>ร้อยละที่เพิ่ม</div><div>จำนวนเงินที่เพิ่ม</div><div>เงินเดือนใหม่</div><strong>{current.oldSalary.toLocaleString()}</strong><strong>{current.raisePercent.toFixed(2)}%</strong><strong>{increase.toLocaleString()}</strong><strong>{(current.oldSalary+increase).toLocaleString()}</strong></div>{current.comments.some(c=>c.trim())&&<><h3>ข้อเสนอแนะ</h3><ol>{current.comments.filter(c=>c.trim()).map((c,i)=><li key={i}>{c}</li>)}</ol></>}</article><div className="send-panel"><div><strong>PDF ของ {current.name}</strong><p>ไฟล์จริงมีเลขบัตรประชาชน บัญชีธนาคาร และคำว่า “ลับ”</p></div><div className="report-actions"><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("preview")}>{pdfLoading==="preview"?"กำลังสร้าง...":"ดู PDF"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={()=>openPdf("download")}>{pdfLoading==="download"?"กำลังดาวน์โหลด...":"ดาวน์โหลดรายคน"}</button><button className="secondary" disabled={pdfLoading!==null||batchPdfLoading||sendingEmails!==null} onClick={downloadAllPdfs}>{batchPdfLoading?"กำลังสร้างทุกคน...":`ดาวน์โหลดทุกคน (${people.length})`}</button></div></div><div className="send-panel email-send-panel"><div><strong>ส่งอีเมลเอกสารลับ</strong><p>{current.name} · {current.email}</p>{currentEmailHistory?.status==="sent"&&<p className="sent-status">ส่งล่าสุด {new Date(currentEmailHistory.sent_at||currentEmailHistory.created_at).toLocaleString("th-TH")}</p>}{currentEmailHistory?.status==="failed"&&<p className="failed-status">ครั้งล่าสุดส่งไม่สำเร็จ — กดส่งรายคนเพื่อลองอีกครั้ง</p>}{!emailConfigured&&<p className="failed-status">ยังไม่ได้ตั้งค่า Google Workspace บน Vercel</p>}{emailConfigured&&!emailHistoryReady&&<p className="failed-status">ยังไม่ได้สร้างตารางประวัติอีเมลใน Supabase</p>}</div><div className="report-actions"><button className="secondary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("single")}>{sendingEmails==="single"?"กำลังส่ง...":currentEmailHistory?.status==="sent"?"ส่งอีเมลรายคนอีกครั้ง":"ส่งอีเมลรายคน"}</button><button className="primary" disabled={sendingEmails!==null||!emailConfigured||!emailHistoryReady} onClick={()=>sendEmails("all")}>{sendingEmails==="all"?`กำลังส่ง ${emailProgress.done}/${emailProgress.total}`:`ยืนยันและส่งทั้งหมด (${people.length})`}</button></div></div>{sendingEmails&&<div className="email-progress"><strong>กำลังส่งอีเมล กรุณาอย่าปิดหน้านี้</strong><p>ดำเนินการแล้ว {emailProgress.done} จาก {emailProgress.total} · สำเร็จ {emailProgress.sent} · ไม่สำเร็จ {emailProgress.failed}</p><progress max={emailProgress.total||1} value={emailProgress.done}/></div>}{message&&<div className="message compact">{message}</div>}</div></div>}
       </section>}
     </main>
   </div>;

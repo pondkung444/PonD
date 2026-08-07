@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./report-actions.css";
 
 export const metadata: Metadata = {
   title: "ระบบแจ้งผลประเมินบุคลากร",
