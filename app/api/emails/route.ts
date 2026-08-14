@@ -18,6 +18,7 @@ type EvaluationRow = {
   comment_3: string | null;
   comment_4: string | null;
   comment_5: string | null;
+  note: string | null;
   cycle: { academic_year: number };
   employee: { full_name: string; email: string; position: string; national_id: string; bank_account: string; active: boolean };
 };
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
   if (isTest && !emailPattern.test(testRecipient)) return NextResponse.json({ error: "ยังไม่ได้ตั้งค่าอีเมลผู้รับการทดสอบ" }, { status: 503 });
 
   const { baseUrl, headers } = supabaseConfig();
-  const select = "id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,cycle:evaluation_cycles(academic_year),employee:employees(full_name,email,position,national_id,bank_account,active)";
+  const select = "id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,note,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,cycle:evaluation_cycles(academic_year),employee:employees(full_name,email,position,national_id,bank_account,active)";
   const dataResponse = await fetch(`${baseUrl}/rest/v1/evaluations?select=${select}&id=in.(${ids.join(",")})`, { headers, cache: "no-store" });
   if (!dataResponse.ok) return databaseFailure(dataResponse, "อ่านข้อมูลสำหรับส่งอีเมลไม่สำเร็จ");
   const rows = (await dataResponse.json()) as EvaluationRow[];
@@ -99,6 +100,7 @@ export async function POST(request: Request) {
         oldSalary: Number(row.old_salary),
         raisePercent: Number(row.raise_percent),
         comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
+        note: row.note?.trim() ?? "",
       });
       const info = await transporter.sendMail({
         from: { name: config.fromName, address: config.email },

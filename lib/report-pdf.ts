@@ -13,6 +13,7 @@ export type PersonnelReportData = {
   oldSalary: number;
   raisePercent: number;
   comments: string[];
+  note: string;
   issuedAt?: Date;
 };
 
@@ -139,18 +140,27 @@ function drawHeader(page: PDFPage, regular: PDFFont, bold: PDFFont, logo: PDFIma
   drawCentered(page, bold, "หนังสือแจ้งผลการประเมินผลการปฏิบัติงานและการปรับขึ้นเงินเดือน", 650, 12.5);
 }
 
-function drawComments(page: PDFPage, regular: PDFFont, bold: PDFFont, comments: string[]) {
+function drawCommentsAndNote(page: PDFPage, regular: PDFFont, comments: string[], note: string) {
   const present = comments.map(value => value.trim()).filter(Boolean);
-  page.drawText("ข้อเสนอแนะ :", { x: 70, y: 265, size: 11, font: regular, color: black });
-  if (!present.length) return;
-  let y = 240;
-  present.forEach((comment, index) => {
-    const lines = wrapText(regular, comment, 10, 420);
-    page.drawText(`${index + 1}.`, { x: 88, y, size: 10, font: regular, color: black });
-    lines.forEach((line, lineIndex) => {
-      page.drawText(line, { x: 108, y: y - lineIndex * 14, size: 10, font: regular, color: black });
+  let y = 265;
+  if (present.length) {
+    page.drawText("ข้อเสนอแนะ :", { x: 70, y, size: 11, font: regular, color: black });
+    y -= 25;
+    present.forEach((comment, index) => {
+      const lines = wrapText(regular, comment, 10, 420);
+      page.drawText(`${index + 1}.`, { x: 88, y, size: 10, font: regular, color: black });
+      lines.forEach((line, lineIndex) => {
+        page.drawText(line, { x: 108, y: y - lineIndex * 14, size: 10, font: regular, color: black });
+      });
+      y -= Math.max(1, lines.length) * 14 + 7;
     });
-    y -= Math.max(1, lines.length) * 14 + 7;
+  }
+  const presentNote = note.trim();
+  if (!presentNote) return;
+  page.drawText("หมายเหตุ :", { x: 70, y, size: 11, font: regular, color: black });
+  const lines = wrapText(regular, presentNote, 10, 420);
+  lines.forEach((line, lineIndex) => {
+    page.drawText(line, { x: 108, y: y - 21 - lineIndex * 14, size: 10, font: regular, color: black });
   });
 }
 
@@ -180,7 +190,7 @@ export async function createPersonnelReportPdf(data: PersonnelReportData) {
   const score = data.evaluationScore === null ? "-" : data.evaluationScore.toFixed(2);
   page.drawText(`ผลประเมิน(%) ${score}`, { x: 325, y: 414, size: 10, font: regular, color: black });
   drawSalaryTable(page, regular, bold, [money(data.oldSalary), data.raisePercent.toFixed(2), money(increase), money(newSalary)]);
-  drawComments(page, regular, bold, data.comments);
+  drawCommentsAndNote(page, regular, data.comments, data.note);
   drawCentered(page, bold, "ลับ", 18, 16, confidentialRed);
 
   return pdf.save();

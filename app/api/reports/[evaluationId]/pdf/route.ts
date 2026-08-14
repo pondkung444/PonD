@@ -15,6 +15,7 @@ type EvaluationRow = {
   comment_3: string | null;
   comment_4: string | null;
   comment_5: string | null;
+  note: string | null;
   cycle: { academic_year: number };
   employee: {
     full_name: string;
@@ -46,6 +47,7 @@ export async function GET(
     "comment_3",
     "comment_4",
     "comment_5",
+    "note",
     "snapshot_full_name",
     "snapshot_position",
     "snapshot_national_id",
@@ -77,6 +79,7 @@ export async function GET(
       oldSalary: Number(row.old_salary),
       raisePercent: Number(row.raise_percent),
       comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
+      note: row.note?.trim() ?? "",
     });
     const safeName = (row.snapshot_full_name || row.employee.full_name).replace(/[\\/:*?"<>|]/g, "_").trim() || "บุคลากร";
     const fileName = `หนังสือแจ้งผลประเมิน_${safeName}_ลับ.pdf`;

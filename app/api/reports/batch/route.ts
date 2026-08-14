@@ -17,6 +17,7 @@ type EvaluationRow = {
   comment_3: string | null;
   comment_4: string | null;
   comment_5: string | null;
+  note: string | null;
   cycle: { academic_year: number };
   employee: {
     full_name: string;
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
   const { baseUrl, headers } = supabaseConfig();
   const select = [
     "id", "evaluation_score", "old_salary", "raise_percent",
-    "comment_1", "comment_2", "comment_3", "comment_4", "comment_5",
+    "comment_1", "comment_2", "comment_3", "comment_4", "comment_5", "note",
     "snapshot_full_name", "snapshot_position", "snapshot_national_id", "snapshot_bank_account",
     "cycle:evaluation_cycles(academic_year)",
     "employee:employees(full_name,position,national_id,bank_account,active)",
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
         oldSalary: Number(row.old_salary),
         raisePercent: Number(row.raise_percent),
         comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
+        note: row.note?.trim() ?? "",
       });
       const order = String(index + 1).padStart(3, "0");
       zip.file(`${order}_หนังสือแจ้งผลประเมิน_${safeFileName(row.snapshot_full_name || row.employee.full_name)}_ลับ.pdf`, pdf);

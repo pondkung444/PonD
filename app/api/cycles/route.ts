@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   const evaluations = activeRows.map(row => ({
     cycle_id: created.id, employee_id: row.employee_id,
     old_salary: Math.round(Number(row.old_salary) * (1 + Number(row.raise_percent) / 100)), raise_percent: 0,
-    evaluation_score: null, comment_1: "", comment_2: "", comment_3: "", comment_4: "", comment_5: "", status: "draft",
+    evaluation_score: null, comment_1: "", comment_2: "", comment_3: "", comment_4: "", comment_5: "", note: "", status: "draft",
     snapshot_full_name: row.snapshot_full_name, snapshot_email: row.snapshot_email, snapshot_position: row.snapshot_position,
     snapshot_national_id: row.snapshot_national_id, snapshot_bank_account: row.snapshot_bank_account,
     snapshot_personnel_group: row.snapshot_personnel_group, snapshot_source_sheet: row.snapshot_source_sheet,

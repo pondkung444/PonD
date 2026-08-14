@@ -4,7 +4,7 @@ import { requireAdmin, supabaseConfig } from "@/lib/supabase-server";
 type ImportRow = {
   code?: string; status?: string; name?: string; email?: string; position?: string;
   nationalId?: string; bankAccount?: string; score?: number | null; oldSalary?: number;
-  raisePercent?: number | null; comments?: string[]; source?: string;
+  raisePercent?: number | null; comments?: string[]; note?: string; source?: string;
 };
 
 type EmployeeRecord = {
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       cycle_id: cycle.id, employee_id: employee.id, evaluation_score: row.evaluation_score,
       old_salary: row.old_salary, raise_percent: row.raise_percent,
       comment_1: row.comments[0] ?? "", comment_2: row.comments[1] ?? "", comment_3: row.comments[2] ?? "",
-      comment_4: row.comments[3] ?? "", comment_5: row.comments[4] ?? "", status: "draft", updated_at: now,
+      comment_4: row.comments[3] ?? "", comment_5: row.comments[4] ?? "", note: row.note, status: "draft", updated_at: now,
       snapshot_full_name: row.full_name, snapshot_email: row.email, snapshot_position: row.position,
       snapshot_national_id: row.national_id, snapshot_bank_account: row.bank_account,
       snapshot_personnel_group: row.personnel_group, snapshot_source_sheet: row.personnel_group,
@@ -124,7 +124,7 @@ function normalizeRow(row: ImportRow, index: number) {
   if (status === "ปฏิบัติงาน" && (!Number.isFinite(old_salary) || old_salary <= 0)) errors.push("เงินเดือนเดิมไม่ถูกต้อง");
   if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) errors.push("ผลประเมินต้องอยู่ระหว่าง 0–100");
   if (!Number.isFinite(raise) || raise < 0) errors.push("ร้อยละที่เพิ่มไม่ถูกต้อง");
-  return { rowNumber: index + 1, employee_code, status, full_name, email, position, national_id, bank_account, personnel_group, evaluation_score: score, old_salary, raise_percent: raise, comments: Array.from({ length: 5 }, (_, i) => clean(row.comments?.[i])), errors };
+  return { rowNumber: index + 1, employee_code, status, full_name, email, position, national_id, bank_account, personnel_group, evaluation_score: score, old_salary, raise_percent: raise, comments: Array.from({ length: 5 }, (_, i) => clean(row.comments?.[i])), note: clean(row.note), errors };
 }
 
 function compareRows(rows: NormalizedRow[], existing: EmployeeRecord[]) {

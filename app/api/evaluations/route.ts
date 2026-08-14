@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const [cycle] = (await cycleResponse.json()) as { id: string; academic_year: number; status: string }[];
   if (!cycle) return NextResponse.json({ error: "ไม่พบรอบประเมิน" }, { status: 404 });
 
-  const query = "select=id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,snapshot_personnel_group,snapshot_source_sheet,employee:employees(id,employee_code,full_name,email,position,national_id,bank_account,personnel_group,source_sheet,active)&cycle_id=eq.";
+  const query = "select=id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,note,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,snapshot_personnel_group,snapshot_source_sheet,employee:employees(id,employee_code,full_name,email,position,national_id,bank_account,personnel_group,source_sheet,active)&cycle_id=eq.";
   const response = await fetch(`${baseUrl}/rest/v1/evaluations?${query}${cycle.id}&order=created_at.asc`, {
     headers,
     cache: "no-store",
@@ -32,7 +32,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     evaluationId?: string; employeeId?: string; name?: string; email?: string; position?: string;
     nationalId?: string; bankAccount?: string;
-    score?: number | null; oldSalary?: number; raisePercent?: number; comments?: string[];
+    score?: number | null; oldSalary?: number; raisePercent?: number; comments?: string[]; note?: string;
   };
   if (!body.evaluationId || !body.employeeId) {
     return NextResponse.json({ error: "ข้อมูลอ้างอิงบุคลากรไม่ครบ" }, { status: 400 });
@@ -51,6 +51,7 @@ export async function PATCH(request: Request) {
     comment_3: body.comments?.[2]?.trim() ?? "",
     comment_4: body.comments?.[3]?.trim() ?? "",
     comment_5: body.comments?.[4]?.trim() ?? "",
+    note: body.note?.trim() ?? "",
     snapshot_full_name: body.name?.trim() ?? "",
     snapshot_email: body.email?.trim().toLowerCase() ?? "",
     snapshot_position: body.position?.trim() ?? "",
