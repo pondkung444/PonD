@@ -17,9 +17,9 @@ export async function createLeaveBalancePdf(data: LeavePdfData) {
   const page = pdf.addPage([A4.width, A4.height]); const left = 58; const right = A4.width - 58; const green = rgb(0.09, 0.33, 0.23); const orange = rgb(0.72, 0.39, 0.04); const ink = rgb(0.10, 0.14, 0.12); const line = rgb(0.82, 0.86, 0.83);
   const center = (text: string, y: number, font = regular, size = 14, color = ink) => page.drawText(text, { x: (A4.width - font.widthOfTextAtSize(text, size)) / 2, y, font, size, color });
   const rightText = (text: string, y: number, font = regular, size = 12) => page.drawText(text, { x: right - font.widthOfTextAtSize(text, size), y, font, size, color: ink });
-  page.drawImage(logo, { x: left, y: 737, width: 49, height: 65 });
-  page.drawText("โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี", { x: left + 61, y: 770, font: bold, size: 17, color: green });
-  page.drawText("งานบุคคล · หนังสือแจ้งยอดวันลา", { x: left + 61, y: 748, font: regular, size: 12, color: ink });
+  page.drawImage(logo, { x: left, y: 744, width: 58, height: 55 });
+  page.drawText("โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี", { x: left + 70, y: 770, font: bold, size: 17, color: green });
+  page.drawText("งานบุคคล · หนังสือแจ้งยอดวันลา", { x: left + 70, y: 748, font: regular, size: 12, color: ink });
   page.drawText("ลับ", { x: right - bold.widthOfTextAtSize("ลับ", 16), y: 770, font: bold, size: 16, color: rgb(0.70, 0.08, 0.05) });
   page.drawLine({ start: { x: left, y: 730 }, end: { x: right, y: 730 }, thickness: 1.2, color: green });
   center(`แจ้งยอดวันลาสะสม ปีการศึกษา ${data.academicYear}`, 688, bold, 18, green); center("และวันที่ลาเปลี่ยนเป็นค่าตอบแทน", 663, bold, 15, ink); rightText(`วันที่แจ้ง ${thaiDate(data.asOfDate)}`, 625, regular, 11);

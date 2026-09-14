@@ -149,7 +149,8 @@ export default function Home() {
   },[]);
 
   useEffect(()=>{
-    if(visiblePeople.length&&!visiblePeople.some(item=>item.index===selected))setSelected(visiblePeople[0].index);
+    async function syncSelection(){await Promise.resolve();if(visiblePeople.length&&!visiblePeople.some(item=>item.index===selected))setSelected(visiblePeople[0].index);}
+    void syncSelection();
   },[selected,visiblePeople]);
 
   async function loadCycles(accessToken:string,preferredYear?:number){
@@ -355,7 +356,7 @@ export default function Home() {
   if(!token)return <main className="login-page"><form className="login-card" onSubmit={login}><div className="logo">ป</div><h1>เข้าสู่ระบบผู้ดูแล</h1><p>ระบบแจ้งผลประเมินบุคลากร</p><label>อีเมล<input type="email" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} required/></label><label>รหัสผ่าน<input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} required/></label>{authError&&<div className="alert">{authError}</div>}{resetMessage&&<div className="message compact">{resetMessage}</div>}<button className="primary" type="submit">เข้าสู่ระบบ</button><button className="link-button" type="button" onClick={requestRecovery}>ลืมรหัสผ่าน</button></form></main>;
 
   return <div className="app-shell">
-    <header className="topbar"><div className="identity"><div className="logo">ป</div><div><strong>ระบบแจ้งผลประเมินบุคลากร</strong><span>โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</span></div></div><div className="cycle cycle-controls"><Link className="module-link" href="/leave">แจ้งวันลา</Link><select aria-label="เลือกรอบประเมิน" value={academicYear} onChange={e=>token&&loadCycles(token,Number(e.target.value))}>{cycles.map(cycle=><option key={cycle.id} value={cycle.academic_year}>ปีการศึกษา {cycle.academic_year}{cycle.status==="closed"?" · ประวัติ":""}</option>)}</select><button onClick={createNextCycle} disabled={creatingCycle}>{creatingCycle?"กำลังสร้าง...":"+ สร้างรอบใหม่"}</button></div></header>
+    <header className="topbar"><div className="identity"><div className="logo">ป</div><div><strong>ระบบแจ้งผลประเมินบุคลากร</strong><span>โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี</span></div></div><div className="topbar-actions"><Link className="module-link" href="/leave" aria-label="เปิดระบบแจ้งวันลา"><span className="module-icon" aria-hidden="true">วันลา</span><span><strong>ระบบแจ้งวันลา</strong><small>ตรวจสอบและส่งยอดวันลา</small></span><b aria-hidden="true">›</b></Link><div className="cycle cycle-controls"><select aria-label="เลือกรอบประเมิน" value={academicYear} onChange={e=>token&&loadCycles(token,Number(e.target.value))}>{cycles.map(cycle=><option key={cycle.id} value={cycle.academic_year}>ปีการศึกษา {cycle.academic_year}{cycle.status==="closed"?" · ประวัติ":""}</option>)}</select><button onClick={createNextCycle} disabled={creatingCycle}>{creatingCycle?"กำลังสร้าง...":"+ สร้างรอบใหม่"}</button></div></div></header>
     <nav className="steps" aria-label="ขั้นตอนทำงาน">
       <button className={step==="import"?"active":""} onClick={()=>setStep("import")}><b>1</b><span>นำเข้า Excel</span></button>
       <button className={step==="review"?"active":""} onClick={()=>setStep("review")}><b>2</b><span>ตรวจและแก้ไข</span></button>
