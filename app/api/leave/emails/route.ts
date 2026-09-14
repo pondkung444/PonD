@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { leaveEmailHtml } from "@/lib/leave-email";
+import { createLeaveBalancePdf } from "@/lib/leave-pdf";
 import { isEmailConfigured, workspaceTransporter } from "@/lib/workspace-email";
 import { requireAdmin, supabaseConfig } from "@/lib/supabase-server";
 
@@ -39,7 +40,10 @@ export async function POST(request: Request) {
     if (delivery.status === "sent") { results.push({ leaveBalanceId: row.id, name: row.snapshot_full_name, status: "skipped", sentAt: delivery.sent_at ?? undefined }); continue; }
     await updateDelivery(baseUrl, headers, delivery.id, { status: "sending", error_message: null });
     try {
-      const info = await transporter.sendMail({ from: { name: config.fromName, address: config.email }, replyTo: config.replyTo, to: recipient, subject: `${isTest ? "[ทดสอบ] " : ""}แจ้งยอดวันลาสะสมและวันลาที่เปลี่ยนเป็นค่าตอบแทน ปีการศึกษา ${row.cycle.academic_year}`, html: leaveEmailHtml({ fullName: row.snapshot_full_name, position: row.snapshot_position, academicYear: row.cycle.academic_year, asOfDate: row.cycle.as_of_date, previousYearBalance: Number(row.previous_year_balance), addedDays: Number(row.added_days), totalDays: Number(row.total_days), compensationDays: Number(row.compensation_days), netAccumulatedDays: Number(row.net_accumulated_days), usedCurrentTerm1: Number(row.used_current_term_1), usedCurrentTerm2: Number(row.used_current_term_2), remainingDays: Number(row.remaining_days) }) });
+      const leaveData = { fullName: row.snapshot_full_name, position: row.snapshot_position, academicYear: row.cycle.academic_year, asOfDate: row.cycle.as_of_date, previousYearBalance: Number(row.previous_year_balance), addedDays: Number(row.added_days), totalDays: Number(row.total_days), compensationDays: Number(row.compensation_days), netAccumulatedDays: Number(row.net_accumulated_days), usedCurrentTerm1: Number(row.used_current_term_1), usedCurrentTerm2: Number(row.used_current_term_2), remainingDays: Number(row.remaining_days) };
+      const pdf = await createLeaveBalancePdf(leaveData);
+      const safeName = row.snapshot_full_name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
+      const info = await transporter.sendMail({ from: { name: config.fromName, address: config.email }, replyTo: config.replyTo, to: recipient, subject: `${isTest ? "[ทดสอบ] " : ""}แจ้งยอดวันลาสะสมและวันลาที่เปลี่ยนเป็นค่าตอบแทน ปีการศึกษา ${row.cycle.academic_year}`, html: leaveEmailHtml(leaveData), attachments: [{ filename: `แจ้งยอดวันลา-${safeName}.pdf`, content: Buffer.from(pdf), contentType: "application/pdf" }] });
       const sentAt = new Date().toISOString();
       await updateDelivery(baseUrl, headers, delivery.id, { status: "sent", provider_message_id: info.messageId, sent_at: sentAt, error_message: null });
       results.push({ leaveBalanceId: row.id, name: row.snapshot_full_name, status: "sent", sentAt });

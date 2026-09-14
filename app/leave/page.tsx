@@ -116,6 +116,18 @@ export default function LeavePage() {
     finally { setSending(null); }
   }
 
+  async function previewPdf() {
+    if (!token || !selected) return;
+    setMessage("");
+    try {
+      const response = await fetch(`/api/leave/reports/${selected.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error ?? "เปิดตัวอย่าง PDF ไม่สำเร็จ"); }
+      const url = URL.createObjectURL(await response.blob());
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "เปิดตัวอย่าง PDF ไม่สำเร็จ"); }
+  }
+
   function signOut() { window.localStorage.removeItem("psu_admin_token"); window.localStorage.removeItem("psu_admin_permissions"); window.location.replace("/"); }
   if (!token && !loading) return <main className={styles.center}><section className={styles.login}><h1>กรุณาเข้าสู่ระบบก่อน</h1><p>ใช้บัญชีผู้ดูแลระบบวันลา</p><Link className="primary" href="/">ไปหน้าเข้าสู่ระบบ</Link></section></main>;
 
@@ -133,7 +145,7 @@ export default function LeavePage() {
           <section className={styles.emailCard}><div><h3>อีเมลผู้รับ</h3><p>แก้ไขแล้วบันทึกกลับไปยังข้อมูลบุคลากรได้ทันที</p></div><div className={styles.emailForm}><input type="email" value={emailDraft} onChange={event => setEmailDraft(event.target.value)} placeholder="name@psuwitsurat.ac.th" /><button className="secondary" disabled={savingEmail || !emailPattern.test(emailDraft) || emailDraft === selected.email} onClick={() => void saveEmail()}>{savingEmail ? "กำลังบันทึก..." : "บันทึกอีเมล"}</button></div>{!emailPattern.test(selected.email) ? <strong className={styles.warning}>ยังส่งไม่ได้ — กรุณาผูกอีเมลก่อน</strong> : null}</section>
           <div className={styles.highlights}><div><span>คงเหลือปัจจุบัน</span><strong>{day(selected.remaining)}</strong></div><div><span>เปลี่ยนเป็นค่าตอบแทน</span><strong>{day(selected.compensation)}</strong></div><div><span>สะสมสุทธิ</span><strong>{day(selected.net)}</strong></div></div>
           <section className={styles.breakdown}><h3>รายละเอียดการคำนวณ</h3><div>{[["คงเหลือจากปีเดิม",selected.previous],["ได้รับเพิ่ม",selected.added],["วันลารวม",selected.total],["ใช้ภาคเรียนที่ 1",selected.used1],["ใช้ภาคเรียนที่ 2",selected.used2],["คงเหลือปัจจุบัน",selected.remaining]].map(([label,value]) => <div key={String(label)}><span>{label}</span><strong>{day(Number(value))}</strong></div>)}</div></section>
-          <div className={styles.sendPanel}><div><strong>{deliveries[selected.id]?.status === "sent" ? "ส่งอีเมลแล้ว" : deliveries[selected.id]?.status === "failed" ? "ครั้งล่าสุดส่งไม่สำเร็จ" : "ยังไม่เคยส่ง"}</strong><p>{deliveries[selected.id]?.status === "sent" ? new Date(deliveries[selected.id].sent_at || deliveries[selected.id].created_at).toLocaleString("th-TH") : deliveries[selected.id]?.error_message || "แนะนำให้ส่งทดสอบก่อนส่งจริง"}</p></div><div className={styles.actions}><button className="secondary" disabled={Boolean(sending)} onClick={() => void send("test")}>ส่งทดสอบ</button><button className="primary" disabled={Boolean(sending) || !emailPattern.test(selected.email)} onClick={() => void send("single")}>{sending === "single" ? "กำลังส่ง..." : "ส่งให้คนนี้"}</button></div></div>
+          <div className={styles.sendPanel}><div><strong>{deliveries[selected.id]?.status === "sent" ? "ส่งอีเมลแล้ว" : deliveries[selected.id]?.status === "failed" ? "ครั้งล่าสุดส่งไม่สำเร็จ" : "ยังไม่เคยส่ง"}</strong><p>{deliveries[selected.id]?.status === "sent" ? new Date(deliveries[selected.id].sent_at || deliveries[selected.id].created_at).toLocaleString("th-TH") : deliveries[selected.id]?.error_message || "อีเมลจะมี PDF แจ้งยอดวันลารายบุคคลแนบไปด้วย"}</p></div><div className={styles.actions}><button className="secondary" disabled={Boolean(sending)} onClick={() => void previewPdf()}>ดูตัวอย่าง PDF</button><button className="secondary" disabled={Boolean(sending)} onClick={() => void send("test")}>ส่งทดสอบ</button><button className="primary" disabled={Boolean(sending) || !emailPattern.test(selected.email)} onClick={() => void send("single")}>{sending === "single" ? "กำลังส่ง..." : "ส่งให้คนนี้"}</button></div></div>
           {sending ? <div className={styles.progress}><strong>กำลังส่ง กรุณาอย่าปิดหน้านี้</strong><span>{progress.done}/{progress.total} · สำเร็จ {progress.sent} · ไม่สำเร็จ {progress.failed}</span><progress max={progress.total || 1} value={progress.done} /></div> : null}
         </article>
       </section>}
