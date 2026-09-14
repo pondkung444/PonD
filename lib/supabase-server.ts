@@ -9,7 +9,9 @@ function requireEnv() {
   return { baseUrl, anonKey, serviceKey };
 }
 
-export async function requireAdmin(request: Request) {
+export type AppPermission = "evaluation" | "leave";
+
+export async function requireAdmin(request: Request, requiredPermission: AppPermission = "evaluation") {
   const { baseUrl, anonKey, serviceKey } = requireEnv();
   const authorization = request.headers.get("authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) return null;
@@ -23,12 +25,15 @@ export async function requireAdmin(request: Request) {
   if (!user.email) return null;
 
   const adminResponse = await fetch(
-    `${baseUrl}/rest/v1/app_admins?select=email&email=eq.${encodeURIComponent(user.email.toLowerCase())}&active=eq.true&limit=1`,
+    `${baseUrl}/rest/v1/app_admins?select=email,permissions&email=eq.${encodeURIComponent(user.email.toLowerCase())}&active=eq.true&limit=1`,
     { headers: serviceHeaders(serviceKey), cache: "no-store" },
   );
   if (!adminResponse.ok) return null;
-  const admins = (await adminResponse.json()) as unknown[];
-  return admins.length ? { email: user.email.toLowerCase() } : null;
+  const admins = (await adminResponse.json()) as Array<{ email: string; permissions: AppPermission[] }>;
+  const admin = admins[0];
+  return admin?.permissions?.includes(requiredPermission)
+    ? { email: user.email.toLowerCase(), permissions: admin.permissions }
+    : null;
 }
 
 export function supabaseConfig() {

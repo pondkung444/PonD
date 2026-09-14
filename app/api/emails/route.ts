@@ -12,7 +12,9 @@ type EvaluationRow = {
   snapshot_bank_account: string;
   evaluation_score: number | string | null;
   old_salary: number | string;
-  raise_percent: number | string;
+  raise_percent: number | string | null;
+  salary_increase: number | string | null;
+  current_salary: number | string | null;
   comment_1: string | null;
   comment_2: string | null;
   comment_3: string | null;
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
   if (isTest && !emailPattern.test(testRecipient)) return NextResponse.json({ error: "ยังไม่ได้ตั้งค่าอีเมลผู้รับการทดสอบ" }, { status: 503 });
 
   const { baseUrl, headers } = supabaseConfig();
-  const select = "id,evaluation_score,old_salary,raise_percent,comment_1,comment_2,comment_3,comment_4,comment_5,note,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,cycle:evaluation_cycles(academic_year),employee:employees(full_name,email,position,national_id,bank_account,active)";
+  const select = "id,evaluation_score,old_salary,raise_percent,salary_increase,current_salary,comment_1,comment_2,comment_3,comment_4,comment_5,note,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,cycle:evaluation_cycles(academic_year),employee:employees(full_name,email,position,national_id,bank_account,active)";
   const dataResponse = await fetch(`${baseUrl}/rest/v1/evaluations?select=${select}&id=in.(${ids.join(",")})`, { headers, cache: "no-store" });
   if (!dataResponse.ok) return databaseFailure(dataResponse, "อ่านข้อมูลสำหรับส่งอีเมลไม่สำเร็จ");
   const rows = (await dataResponse.json()) as EvaluationRow[];
@@ -98,7 +100,9 @@ export async function POST(request: Request) {
         bankAccount: row.snapshot_bank_account || row.employee.bank_account,
         evaluationScore: Number(row.evaluation_score),
         oldSalary: Number(row.old_salary),
-        raisePercent: Number(row.raise_percent),
+        raisePercent: row.raise_percent === null ? null : Number(row.raise_percent),
+        salaryIncrease: row.salary_increase === null ? null : Number(row.salary_increase),
+        currentSalary: row.current_salary === null ? null : Number(row.current_salary),
         comments: [row.comment_1, row.comment_2, row.comment_3, row.comment_4, row.comment_5].map(value => value?.trim() ?? ""),
         note: row.note?.trim() ?? "",
       });

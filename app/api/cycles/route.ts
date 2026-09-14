@@ -29,13 +29,13 @@ export async function POST(request: Request) {
   const cycleResponse = await fetch(`${baseUrl}/rest/v1/evaluation_cycles`, { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify([{ academic_year: academicYear, title: `ผลการประเมินและการปรับขึ้นเงินเดือน ปีการศึกษา ${academicYear}`, period_start: `${startYear}-05-01`, period_end: `${startYear + 1}-04-30`, status: "draft" }]) });
   if (!cycleResponse.ok) return databaseError(cycleResponse);
   const [created] = (await cycleResponse.json()) as Cycle[];
-  const sourceResponse = await fetch(`${baseUrl}/rest/v1/evaluations?select=employee_id,old_salary,raise_percent,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,snapshot_personnel_group,snapshot_source_sheet,employee:employees(active)&cycle_id=eq.${source.id}`, { headers, cache: "no-store" });
+  const sourceResponse = await fetch(`${baseUrl}/rest/v1/evaluations?select=employee_id,old_salary,current_salary,snapshot_full_name,snapshot_email,snapshot_position,snapshot_national_id,snapshot_bank_account,snapshot_personnel_group,snapshot_source_sheet,employee:employees(active)&cycle_id=eq.${source.id}`, { headers, cache: "no-store" });
   if (!sourceResponse.ok) return databaseError(sourceResponse);
-  const sourceRows = (await sourceResponse.json()) as Array<Record<string, unknown> & { employee_id: string; old_salary: number | string; raise_percent: number | string; employee?: { active?: boolean } }>;
+  const sourceRows = (await sourceResponse.json()) as Array<Record<string, unknown> & { employee_id: string; old_salary: number | string; current_salary: number | string | null; employee?: { active?: boolean } }>;
   const activeRows = sourceRows.filter(row => row.employee?.active !== false);
   const evaluations = activeRows.map(row => ({
     cycle_id: created.id, employee_id: row.employee_id,
-    old_salary: Math.round(Number(row.old_salary) * (1 + Number(row.raise_percent) / 100)), raise_percent: 0,
+    old_salary: row.current_salary === null ? Number(row.old_salary) : Number(row.current_salary), raise_percent: null, salary_increase: null, current_salary: null,
     evaluation_score: null, comment_1: "", comment_2: "", comment_3: "", comment_4: "", comment_5: "", note: "", status: "draft",
     snapshot_full_name: row.snapshot_full_name, snapshot_email: row.snapshot_email, snapshot_position: row.snapshot_position,
     snapshot_national_id: row.snapshot_national_id, snapshot_bank_account: row.snapshot_bank_account,

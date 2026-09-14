@@ -4,7 +4,7 @@ import { requireAdmin, supabaseConfig } from "@/lib/supabase-server";
 type ImportRow = {
   code?: string; status?: string; name?: string; email?: string; position?: string;
   nationalId?: string; bankAccount?: string; score?: number | null; oldSalary?: number;
-  raisePercent?: number | null; comments?: string[]; note?: string; source?: string;
+  raisePercent?: number | null; salaryIncrease?: number | null; currentSalary?: number | null; comments?: string[]; note?: string; source?: string;
 };
 
 type EmployeeRecord = {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     if (!employee) throw new Error(`Imported employee could not be resolved: ${row.full_name}`);
     return {
       cycle_id: cycle.id, employee_id: employee.id, evaluation_score: row.evaluation_score,
-      old_salary: row.old_salary, raise_percent: row.raise_percent,
+      old_salary: row.old_salary, raise_percent: row.raise_percent, salary_increase: row.salary_increase, current_salary: row.current_salary,
       comment_1: row.comments[0] ?? "", comment_2: row.comments[1] ?? "", comment_3: row.comments[2] ?? "",
       comment_4: row.comments[3] ?? "", comment_5: row.comments[4] ?? "", note: row.note, status: "draft", updated_at: now,
       snapshot_full_name: row.full_name, snapshot_email: row.email, snapshot_position: row.position,
@@ -112,7 +112,9 @@ function normalizeRow(row: ImportRow, index: number) {
   const personnel_group = clean(row.source);
   const old_salary = Number(row.oldSalary ?? 0);
   const score = row.score === null || row.score === undefined ? null : Number(row.score);
-  const raise = row.raisePercent === null || row.raisePercent === undefined ? 0 : Number(row.raisePercent);
+  const raise = optionalNumber(row.raisePercent);
+  const salary_increase = optionalNumber(row.salaryIncrease);
+  const current_salary = optionalNumber(row.currentSalary);
   const errors: string[] = [];
   if (!statuses.has(status)) errors.push("สถานะปีนี้ต้องเป็น ปฏิบัติงาน หรือ พ้นสภาพ");
   if (!full_name) errors.push("ไม่มีชื่อ–สกุล");
@@ -123,8 +125,14 @@ function normalizeRow(row: ImportRow, index: number) {
   if (!groups.has(personnel_group)) errors.push("ชื่อกลุ่มบุคลากรไม่ถูกต้อง");
   if (status === "ปฏิบัติงาน" && (!Number.isFinite(old_salary) || old_salary <= 0)) errors.push("เงินเดือนเดิมไม่ถูกต้อง");
   if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) errors.push("ผลประเมินต้องอยู่ระหว่าง 0–100");
-  if (!Number.isFinite(raise) || raise < 0) errors.push("ร้อยละที่เพิ่มไม่ถูกต้อง");
-  return { rowNumber: index + 1, employee_code, status, full_name, email, position, national_id, bank_account, personnel_group, evaluation_score: score, old_salary, raise_percent: raise, comments: Array.from({ length: 5 }, (_, i) => clean(row.comments?.[i])), note: clean(row.note), errors };
+  if (raise !== null && (!Number.isFinite(raise) || raise < 0)) errors.push("ร้อยละที่เพิ่มไม่ถูกต้อง");
+  if (salary_increase !== null && (!Number.isFinite(salary_increase) || salary_increase < 0)) errors.push("จำนวนเงินที่เพิ่มไม่ถูกต้อง");
+  if (current_salary !== null && (!Number.isFinite(current_salary) || current_salary < 0)) errors.push("เงินเดือนปัจจุบันไม่ถูกต้อง");
+  const hasAdjustment = [raise, salary_increase, current_salary].some(value => value !== null);
+  const completeAdjustment = [raise, salary_increase, current_salary].every(value => value !== null);
+  if (status === "ปฏิบัติงาน" && hasAdjustment && !completeAdjustment) errors.push("ข้อมูลการปรับเงินเดือนไม่ครบ");
+  if (completeAdjustment && current_salary !== old_salary + salary_increase!) errors.push("เงินเดือนปัจจุบันไม่เท่ากับเงินเดือนเดิมบวกจำนวนเงินที่เพิ่ม");
+  return { rowNumber: index + 1, employee_code, status, full_name, email, position, national_id, bank_account, personnel_group, evaluation_score: score, old_salary, raise_percent: raise, salary_increase, current_salary, comments: Array.from({ length: 5 }, (_, i) => clean(row.comments?.[i])), note: clean(row.note), errors };
 }
 
 function compareRows(rows: NormalizedRow[], existing: EmployeeRecord[]) {
@@ -185,6 +193,7 @@ function generatedCode(year: number, row: NormalizedRow, index: number) {
 }
 
 function clean(value: unknown) { return String(value ?? "").trim(); }
+function optionalNumber(value: unknown) { return value === null || value === undefined || value === "" || value === "-" ? null : Number(value); }
 function identity(value: string) { return value.replace(/[-\s]/g, "").toLowerCase(); }
 
 async function databaseError(response: Response) {

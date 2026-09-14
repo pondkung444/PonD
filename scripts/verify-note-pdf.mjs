@@ -12,6 +12,8 @@ const base = {
   evaluationScore: 90,
   oldSalary: 20000,
   raisePercent: 4,
+  salaryIncrease: 800,
+  currentSalary: 20800,
   comments: [],
   issuedAt: new Date("2026-08-11T00:00:00.000Z"),
 };
@@ -21,4 +23,13 @@ await fs.writeFile(`${outputDir}/with-comments-and-note.pdf`, await createPerson
   ...base,
   comments: Array.from({ length: 5 }, (_, index) => `ข้อเสนอแนะลำดับที่ ${index + 1} สำหรับตรวจสอบข้อความยาวในรายงานว่าจัดวางได้ครบถ้วนและไม่ทับส่วนท้ายของเอกสาร`),
   note: "หมายเหตุข้อความยาวสำหรับตรวจสอบพื้นที่ท้ายหน้า เมื่อบุคลากรมีทั้งข้อเสนอแนะครบห้าข้อและมีหมายเหตุพร้อมกัน",
+}));
+await fs.writeFile(`${outputDir}/without-salary-adjustment.pdf`, await createPersonnelReportPdf({
+  ...base,
+  fullName: "นางสาวปรีดา ชัยพัฒน์",
+  oldSalary: 9000,
+  raisePercent: null,
+  salaryIncrease: null,
+  currentSalary: null,
+  note: "การปรับขึ้นเงินเดือนต้องปฏิบัติงานไม่น้อยกว่า 8 เดือน",
 }));

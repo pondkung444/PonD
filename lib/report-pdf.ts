@@ -11,7 +11,9 @@ export type PersonnelReportData = {
   bankAccount: string;
   evaluationScore: number | null;
   oldSalary: number;
-  raisePercent: number;
+  raisePercent: number | null;
+  salaryIncrease: number | null;
+  currentSalary: number | null;
   comments: string[];
   note: string;
   issuedAt?: Date;
@@ -94,7 +96,7 @@ function drawSalaryTable(page: PDFPage, regular: PDFFont, bold: PDFFont, values:
     ["เงินเดือนเดิม", "(บาท)"],
     ["ปรับขึ้นเงินเดือน", "(ร้อยละที่เพิ่มขึ้น)"],
     ["จำนวนเงินที่ได้เพิ่ม", "(บาท)"],
-    ["เงินเดือนที่ได้รับ", "(บาท)"],
+    ["เงินเดือนปัจจุบัน", "(บาท)"],
   ];
   headers.forEach((lines, index) => {
     lines.forEach((line, lineIndex) => {
@@ -170,8 +172,6 @@ export async function createPersonnelReportPdf(data: PersonnelReportData) {
   const page = pdf.addPage([A4.width, A4.height]);
   const { regular, bold, logo } = await loadAssets(pdf);
   const issuedAt = data.issuedAt ?? new Date();
-  const increase = Math.round(data.oldSalary * data.raisePercent / 100);
-  const newSalary = data.oldSalary + increase;
 
   pdf.setTitle(`หนังสือแจ้งผลประเมิน - ${data.fullName}`);
   pdf.setAuthor("โรงเรียน มอ. วิทยานุสรณ์ สุราษฎร์ธานี");
@@ -189,7 +189,7 @@ export async function createPersonnelReportPdf(data: PersonnelReportData) {
   page.drawText(`ตั้งแต่วันที่ 1 พฤษภาคม ${data.academicYear} - 30 เมษายน ${data.academicYear + 1}`, { x: 325, y: 435, size: 10, font: regular, color: black });
   const score = data.evaluationScore === null ? "-" : data.evaluationScore.toFixed(2);
   page.drawText(`ผลประเมิน(%) ${score}`, { x: 325, y: 414, size: 10, font: regular, color: black });
-  drawSalaryTable(page, regular, bold, [money(data.oldSalary), data.raisePercent.toFixed(2), money(increase), money(newSalary)]);
+  drawSalaryTable(page, regular, bold, [money(data.oldSalary), data.raisePercent === null ? "-" : data.raisePercent.toFixed(2), data.salaryIncrease === null ? "-" : money(data.salaryIncrease), data.currentSalary === null ? "-" : money(data.currentSalary)]);
   drawCommentsAndNote(page, regular, data.comments, data.note);
   drawCentered(page, bold, "ลับ", 18, 16, confidentialRed);
 
