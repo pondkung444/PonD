@@ -64,7 +64,7 @@ if (new Set(parsedRows.map(row => row.employee.id)).size !== parsedRows.length) 
 const [cycle] = await request("leave_cycles?on_conflict=academic_year", {
   method: "POST",
   headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-  body: JSON.stringify([{ academic_year: 2569, as_of_date: "2026-05-01", source_file_name: path.basename(inputPath), imported_by: "codex-import", updated_at: new Date().toISOString() }]),
+  body: JSON.stringify([{ academic_year: 2569, as_of_date: "2026-09-15", source_file_name: path.basename(inputPath), imported_by: "codex-import", updated_at: new Date().toISOString() }]),
 });
 
 const payload = parsedRows.map(row => ({

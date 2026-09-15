@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   const employeeMap = new Map(employees.map(employee => [employee.id, employee]));
   const missing = ids.filter(id => !employeeMap.get(id)?.active);
   if (missing.length) return NextResponse.json({ error: "มีบุคลากรที่ไม่พบหรือไม่ได้เปิดใช้งาน" }, { status: 409 });
-  const asOfDate = `${academicYear - 543}-05-01`;
+  const asOfDate = `${academicYear - 543}-09-15`;
   const cycleResponse = await fetch(`${baseUrl}/rest/v1/leave_cycles?on_conflict=academic_year`, { method: "POST", headers: { ...headers, Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify([{ academic_year: academicYear, as_of_date: asOfDate, source_file_name: String(body?.fileName ?? "").slice(0, 250), imported_by: admin.email, updated_at: new Date().toISOString() }]) });
   if (!cycleResponse.ok) return missingSchema(cycleResponse);
   const [cycle] = await cycleResponse.json() as Array<{ id: string }>;
