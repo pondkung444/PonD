@@ -8,8 +8,10 @@ type Employee = { id: string; email: string };
 type Row = { id: string; employeeId: string; sourceRow: number; name: string; email: string; position: string; previous: number; added: number; total: number; compensation: number; net: number; used1: number; used2: number; remaining: number };
 type Delivery = { leave_balance_id: string; status: "queued" | "sending" | "sent" | "failed"; sent_at: string | null; created_at: string; error_message: string | null };
 type Filter = "all" | "ready" | "pending" | "sent" | "failed";
+type FormData = { fullName: string; email: string; position: string; previous: number; added: number; compensation: number; used1: number; used2: number };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const emptyForm: FormData = { fullName: "", email: "", position: "", previous: 0, added: 0, compensation: 0, used1: 0, used2: 0 };
 const day = (value: number) => `${Number.isInteger(value) ? value : value.toFixed(2)} วัน`;
 const rowStatus = (row: Row, deliveries: Record<string, Delivery>): Filter => {
   const delivery = deliveries[row.id];
@@ -33,6 +35,9 @@ export default function LeavePage() {
   const [sending, setSending] = useState<"test" | "single" | "all" | "retry" | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, sent: 0, failed: 0 });
   const [message, setMessage] = useState("");
+  const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [savingRecord, setSavingRecord] = useState(false);
 
   useEffect(() => {
     async function initialize() {
@@ -128,20 +133,34 @@ export default function LeavePage() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "เปิดตัวอย่าง PDF ไม่สำเร็จ"); }
   }
 
+  function openCreate() { setForm(emptyForm); setFormMode("create"); setMessage(""); }
+  function openEdit() { if (!selected) return; setForm({ fullName: selected.name, email: selected.email, position: selected.position, previous: selected.previous, added: selected.added, compensation: selected.compensation, used1: selected.used1, used2: selected.used2 }); setFormMode("edit"); setMessage(""); }
+  const formTotal = form.previous + form.added; const formNet = formTotal - form.compensation; const formRemaining = formNet - form.used1 - form.used2;
+  async function saveRecord() {
+    if (!token || !formMode) return;
+    setSavingRecord(true); setMessage("");
+    try {
+      const response = await fetch("/api/leave/records", { method: formMode === "create" ? "POST" : "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ academicYear: year, leaveBalanceId: formMode === "edit" ? selected?.id : undefined, ...form }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "บันทึกข้อมูลไม่สำเร็จ");
+      setFormMode(null); await load(token, year); setSelectedId(String(data.row.id)); setMessage(formMode === "create" ? `เพิ่ม ${form.fullName} แล้ว` : `บันทึกข้อมูลของ ${form.fullName} แล้ว`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "บันทึกข้อมูลไม่สำเร็จ"); }
+    finally { setSavingRecord(false); }
+  }
+
   function signOut() { window.localStorage.removeItem("psu_admin_token"); window.localStorage.removeItem("psu_admin_permissions"); window.location.replace("/"); }
   if (!token && !loading) return <main className={styles.center}><section className={styles.login}><h1>กรุณาเข้าสู่ระบบก่อน</h1><p>ใช้บัญชีผู้ดูแลระบบวันลา</p><Link className="primary" href="/">ไปหน้าเข้าสู่ระบบ</Link></section></main>;
 
   return <div className={styles.shell}>
     <header className={styles.header}><div className={styles.brand}><div className={styles.logo}>PSU</div><div><strong>ระบบแจ้งวันลา</strong><span>ตรวจสอบข้อมูลก่อนส่งให้บุคลากร</span></div></div><div className={styles.headerActions}><label>ปีการศึกษา <input type="number" value={year} onChange={event => setYear(Number(event.target.value))} onBlur={() => token && void load(token, year)} /></label>{permissions.includes("evaluation") ? <Link className="secondary" href="/">ระบบประเมิน</Link> : null}<button className="secondary" onClick={signOut}>ออกจากระบบ</button></div></header>
     <main className={styles.main}>
-      <section className={styles.hero}><div><span>ปีการศึกษา {year}</span><h1>ตรวจสอบความพร้อมก่อนส่งอีเมล</h1><p>เลือกบุคลากร ตรวจรายละเอียด และแก้อีเมลได้ในหน้าเดียว ระบบจะส่งเฉพาะรายการที่พร้อม</p></div><div className={styles.actions}><button className="secondary" disabled={Boolean(sending) || !counts.failed} onClick={() => void send("retry")}>ลองส่งที่ล้มเหลว ({counts.failed})</button><button className="primary" disabled={Boolean(sending) || !counts.ready} onClick={() => void send("all")}>{sending === "all" ? `กำลังส่ง ${progress.done}/${progress.total}` : `ส่งรายการพร้อม (${counts.ready})`}</button></div></section>
+      <section className={styles.hero}><div><span>ปีการศึกษา {year}</span><h1>ตรวจสอบความพร้อมก่อนส่งอีเมล</h1><p>เลือกบุคลากร ตรวจรายละเอียด เพิ่มหรือแก้ไขข้อมูล และส่งเฉพาะรายการที่พร้อม</p></div><div className={styles.actions}><button className="secondary" disabled={Boolean(sending)} onClick={openCreate}>+ เพิ่มบุคลากร</button><button className="secondary" disabled={Boolean(sending) || !counts.failed} onClick={() => void send("retry")}>ลองส่งที่ล้มเหลว ({counts.failed})</button><button className="primary" disabled={Boolean(sending) || !counts.ready} onClick={() => void send("all")}>{sending === "all" ? `กำลังส่ง ${progress.done}/${progress.total}` : `ส่งรายการพร้อม (${counts.ready})`}</button></div></section>
       <section className={styles.stats}>{([['all','ทั้งหมด'],['ready','พร้อมส่ง'],['pending','รออีเมล'],['sent','ส่งแล้ว'],['failed','ส่งไม่สำเร็จ']] as Array<[Filter,string]>).map(([key,label]) => <button key={key} className={filter === key ? styles.active : ""} onClick={() => setFilter(key)}><span>{label}</span><strong>{counts[key]}</strong></button>)}</section>
       <section className={styles.toolbar}><label><span>ค้นหาบุคลากร</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="ชื่อ อีเมล หรือตำแหน่ง" /></label><div><span>แสดง {visible.length} จาก {rows.length} คน</span><button className="secondary" disabled={loading} onClick={() => token && void load(token, year)}>{loading ? "กำลังโหลด..." : "รีเฟรช"}</button></div></section>
       {message ? <div className={styles.message}>{message}</div> : null}
       {loading ? <div className={styles.empty}>กำลังโหลดข้อมูลวันลา...</div> : !selected ? <div className={styles.empty}>ไม่พบข้อมูล</div> : <section className={styles.workspace}>
         <aside className={styles.people}><div className={styles.listTitle}><strong>รายชื่อบุคลากร</strong><span>{visible.length} คน</span></div>{visible.map(row => { const status = statusOf(row); return <button key={row.id} className={selected.id === row.id ? styles.selected : ""} onClick={() => setSelectedId(row.id)}><span><strong>{row.name}</strong><small>{row.position || "ไม่ระบุตำแหน่ง"}</small></span><em className={styles[status]}>{status === "ready" ? "พร้อม" : status === "pending" ? "รออีเมล" : status === "sent" ? "ส่งแล้ว" : "ผิดพลาด"}</em></button>; })}{!visible.length ? <div className={styles.noResults}>ไม่พบรายชื่อ<br /><button onClick={() => { setQuery(""); setFilter("all"); }}>ล้างตัวกรอง</button></div> : null}</aside>
         <article className={styles.detail}>
-          <div className={styles.detailHead}><div><small>ข้อมูลจาก Excel แถว {selected.sourceRow}</small><h2>{selected.name}</h2><p>{selected.position || "ยังไม่ระบุตำแหน่ง"}</p></div><span className={`${styles.badge} ${styles[statusOf(selected)]}`}>{statusOf(selected) === "ready" ? "พร้อมส่ง" : statusOf(selected) === "pending" ? "รอผูกอีเมล" : statusOf(selected) === "sent" ? "ส่งแล้ว" : "ส่งไม่สำเร็จ"}</span></div>
+          <div className={styles.detailHead}><div><small>ข้อมูลรายการที่ {selected.sourceRow}</small><h2>{selected.name}</h2><p>{selected.position || "ยังไม่ระบุตำแหน่ง"}</p></div><div className={styles.detailActions}><button className="secondary" onClick={openEdit}>แก้ไขข้อมูล</button><span className={`${styles.badge} ${styles[statusOf(selected)]}`}>{statusOf(selected) === "ready" ? "พร้อมส่ง" : statusOf(selected) === "pending" ? "รอผูกอีเมล" : statusOf(selected) === "sent" ? "ส่งแล้ว" : "ส่งไม่สำเร็จ"}</span></div></div>
           <section className={styles.emailCard}><div><h3>อีเมลผู้รับ</h3><p>แก้ไขแล้วบันทึกกลับไปยังข้อมูลบุคลากรได้ทันที</p></div><div className={styles.emailForm}><input type="email" value={emailDraft} onChange={event => setEmailDraft(event.target.value)} placeholder="name@psuwitsurat.ac.th" /><button className="secondary" disabled={savingEmail || !emailPattern.test(emailDraft) || emailDraft === selected.email} onClick={() => void saveEmail()}>{savingEmail ? "กำลังบันทึก..." : "บันทึกอีเมล"}</button></div>{!emailPattern.test(selected.email) ? <strong className={styles.warning}>ยังส่งไม่ได้ — กรุณาผูกอีเมลก่อน</strong> : null}</section>
           <div className={styles.highlights}><div><span>คงเหลือปัจจุบัน</span><strong>{day(selected.remaining)}</strong></div><div><span>เปลี่ยนเป็นค่าตอบแทน</span><strong>{day(selected.compensation)}</strong></div><div><span>สะสมสุทธิ</span><strong>{day(selected.net)}</strong></div></div>
           <section className={styles.breakdown}><h3>รายละเอียดการคำนวณ</h3><div>{[["คงเหลือจากปีเดิม",selected.previous],["ได้รับเพิ่ม",selected.added],["วันลารวม",selected.total],["ใช้ภาคเรียนที่ 1",selected.used1],["ใช้ภาคเรียนที่ 2",selected.used2],["คงเหลือปัจจุบัน",selected.remaining]].map(([label,value]) => <div key={String(label)}><span>{label}</span><strong>{day(Number(value))}</strong></div>)}</div></section>
@@ -150,5 +169,6 @@ export default function LeavePage() {
         </article>
       </section>}
     </main>
+    {formMode ? <div className={styles.modalBackdrop} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !savingRecord) setFormMode(null); }}><section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="leave-form-title"><div className={styles.modalHead}><div><span>{formMode === "create" ? "บุคลากรใหม่" : "แก้ไขรายการ"}</span><h2 id="leave-form-title">{formMode === "create" ? "เพิ่มข้อมูลบุคลากร" : `แก้ไขข้อมูล ${selected?.name}`}</h2><p>ยอดรวมและยอดคงเหลือจะคำนวณให้อัตโนมัติ</p></div><button aria-label="ปิดหน้าต่าง" disabled={savingRecord} onClick={() => setFormMode(null)}>×</button></div><div className={styles.formGrid}><label className={styles.fullField}>ชื่อ–สกุล<input value={form.fullName} onChange={event => setForm(value => ({ ...value, fullName: event.target.value }))} /></label><label>ตำแหน่ง<input value={form.position} onChange={event => setForm(value => ({ ...value, position: event.target.value }))} /></label><label>อีเมล<input type="email" value={form.email} onChange={event => setForm(value => ({ ...value, email: event.target.value }))} placeholder="เว้นว่างแล้วผูกภายหลังได้" /></label>{([['previous','วันลาคงเหลือจากปีเดิม'],['added','วันลาที่ได้รับเพิ่ม'],['compensation','เปลี่ยนเป็นค่าตอบแทน'],['used1','ใช้ภาคเรียนที่ 1'],['used2','ใช้ภาคเรียนที่ 2']] as Array<[keyof FormData,string]>).map(([key,label]) => <label key={key}>{label}<input type="number" min="0" step="0.5" value={form[key]} onChange={event => setForm(value => ({ ...value, [key]: Number(event.target.value) }))} /></label>)}</div><div className={styles.formSummary}><div><span>วันลารวม</span><strong>{day(formTotal)}</strong></div><div><span>สะสมสุทธิ</span><strong>{day(formNet)}</strong></div><div className={formRemaining < 0 ? styles.invalid : ""}><span>คงเหลือปัจจุบัน</span><strong>{day(formRemaining)}</strong></div></div><div className={styles.modalActions}><button className="secondary" disabled={savingRecord} onClick={() => setFormMode(null)}>ยกเลิก</button><button className="primary" disabled={savingRecord || !form.fullName.trim() || formRemaining < 0 || formNet < 0} onClick={() => void saveRecord()}>{savingRecord ? "กำลังบันทึก..." : formMode === "create" ? "เพิ่มบุคลากร" : "บันทึกการแก้ไข"}</button></div></section></div> : null}
   </div>;
 }
